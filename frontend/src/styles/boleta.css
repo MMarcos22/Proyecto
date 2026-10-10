@@ -1,0 +1,443 @@
+/* ═══════════════════════════════════════════════════
+   BOLETA OFICIAL — HOJA OFICIO 21.6 × 33 cm
+   Pantalla e impresión usan EXACTAMENTE las mismas medidas
+   ═══════════════════════════════════════════════════ */
+
+.hoja-oficio {
+    width: 21.6cm;
+    height: 33cm;
+    margin: 0 auto;
+    padding: 1.5cm;
+    box-sizing: border-box;
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio-lg);
+    box-shadow: var(--sombra);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── ENCABEZADO ─────────────────────────────── */
+.bol-encabezado {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 9px;
+    margin-bottom: 7px;
+    flex: 0 0 auto;
+}
+
+.bol-encabezado img {
+    width: 68px;
+    height: 68px;
+    object-fit: contain;
+}
+
+.bol-encabezado h2 {
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--texto);
+    letter-spacing: .01em;
+}
+
+.bol-encabezado h3 {
+    font-size: 14.5px;
+    font-weight: 600;
+    margin-top: 3px;
+    color: var(--texto);
+    letter-spacing: .01em;
+}
+
+/* ── CUERPO ─────────────────────────────────── */
+.bol-cuerpo {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ── FILA DE CAMPOS ─────────────────────────── */
+.bol-fila {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+.bol-et {
+    font-size: 9.5px;
+    font-weight: 500;
+    color: var(--texto);
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+.bol-linea {
+    flex: 1 1 auto;
+    min-width: 20px;
+    padding: 0 3px 1px;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--texto);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--texto);
+    border-radius: 0;
+    transition: border-color 140ms;
+}
+
+.bol-linea:focus {
+    outline: none;
+    border-bottom: 1.6px solid var(--rojo-bomberos);
+}
+
+select.bol-linea {
+    cursor: pointer;
+}
+
+.w-xs {
+    flex: 0 0 62px;
+}
+
+.w-sm {
+    flex: 0 0 92px;
+}
+
+.w-md {
+    flex: 0 0 130px;
+}
+
+.w-lg {
+    flex: 0 0 180px;
+}
+
+/* ── TÍTULO INCENDIO ────────────── */
+.bol-titulo-caja {
+    align-self: center;
+    padding: 3px 18px;
+    margin: 2px 0 16px;
+    border: 1.5px solid var(--texto);
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--texto);
+    flex: 0 0 auto;
+}
+
+/* ── OBSERVACIONES ──────────────────────────── */
+.bol-observaciones {
+    flex: 5 1 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin-top: 4px;
+}
+
+.bol-observaciones .bol-et {
+    margin-bottom: 3px;
+}
+
+.bol-observaciones textarea {
+    flex: 1;
+    width: 100%;
+    padding: 5px 7px;
+    font: inherit;
+    font-size: 10px;
+    color: var(--texto);
+    background: transparent;
+    border: 1px solid var(--texto);
+    border-radius: 3px;
+    resize: none;
+    line-height: 1.5;
+}
+
+.bol-observaciones textarea:focus {
+    outline: none;
+    border-color: var(--rojo-bomberos);
+}
+
+/* ── FIRMAS EN LÍNEA ────────────────────────── */
+.bol-firmas-linea {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 10px;
+    flex: 0 0 auto;
+}
+
+.bol-firma-fila {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+}
+
+.bol-firma-fila .bol-et {
+    min-width: 128px;
+}
+
+.bol-firma-f {
+    font-size: 9.5px;
+    color: var(--texto);
+    margin-left: 10px;
+    flex: 0 0 auto;
+}
+
+/* ── FIRMAS EN COLUMNA (incendio) ───────────── */
+.bol-firmas-col {
+    display: flex;
+    align-items: baseline;
+    gap: 34px;
+    padding-top: 14px;
+    flex: 0 0 auto;
+}
+
+.bol-firma-bloque {
+    flex: 1 1 0;
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+}
+
+.bol-firma-bloque .bol-et {
+    flex: 0 0 auto;
+}
+
+.bol-firma-bloque .bol-linea {
+    flex: 1 1 auto;
+}
+
+.bol-firma-rubrica {
+    display: flex;
+    gap: 34px;
+    margin-top: 22px;
+    flex: 0 0 auto;
+}
+
+.bol-firma-rubrica>div {
+    flex: 1 1 0;
+    text-align: center;
+}
+
+.bol-firma-rubrica .raya-f {
+    border-top: 1px solid var(--texto);
+    padding-top: 3px;
+    font-size: 9px;
+    color: var(--texto);
+}
+
+/* ── CERTIFICACIÓN ──────────────────────────── */
+.bol-razon {
+    font-size: 9px;
+    line-height: 1.45;
+    text-align: justify;
+    color: var(--texto);
+    margin-top: 7px;
+    flex: 0 0 auto;
+}
+
+.bol-razon-fila {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-top: 4px;
+    flex: 0 0 auto;
+}
+
+.bol-lugar {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 12px;
+    font-size: 10.5px;
+    font-weight: 600;
+    flex: 0 0 auto;
+}
+
+.bol-lugar .bol-linea {
+    font-weight: 600;
+    text-align: center;
+}
+
+.bol-secretaria {
+    width: 200px;
+    margin: 20px auto 0;
+    text-align: center;
+    flex: 0 0 auto;
+}
+
+.bol-secretaria .raya-sec {
+    border-top: 1px solid var(--texto);
+    margin-bottom: 3px;
+}
+
+.bol-secretaria span {
+    font-size: 9.5px;
+    color: var(--texto);
+}
+
+/* ═══════════════════════════════════════════════
+   IMPRESIÓN — solo oculta la interfaz y fija colores.
+   NINGÚN cambio de tamaño ni distribución.
+   ═══════════════════════════════════════════════ */
+@media print {
+
+    .no-imprimir,
+    .barra-lateral,
+    .encabezado,
+    .velo-lateral,
+    .titulo-seccion,
+    .selector-tipos,
+    .acciones-hoja,
+    .pila-notificaciones {
+        display: none !important;
+    }
+
+    html,
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        height: auto !important;
+    }
+
+    .disposicion {
+        display: block !important;
+        min-height: 0 !important;
+    }
+
+    .zona-principal {
+        display: block !important;
+    }
+
+    .contenido {
+        padding: 0 !important;
+    }
+
+    .hoja-oficio {
+        margin: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: #fff !important;
+        break-inside: avoid;
+        break-after: avoid;
+    }
+
+    .bol-encabezado h2,
+    .bol-encabezado h3,
+    .bol-et,
+    .bol-razon,
+    .bol-lugar,
+    .bol-secretaria span,
+    .bol-firma-f,
+    .raya-f {
+        color: #000 !important;
+    }
+
+    .bol-titulo-caja {
+        color: #000 !important;
+        border-color: #000 !important;
+    }
+
+    .bol-linea {
+        color: #000 !important;
+        border-bottom-color: #000 !important;
+        background: none !important;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+
+    .bol-observaciones textarea {
+        border-color: #000 !important;
+        color: #000 !important;
+        background: none !important;
+    }
+
+    .raya-sec,
+    .raya-f {
+        border-top-color: #000 !important;
+    }
+
+    .modo-blanco .bol-linea,
+    .modo-blanco .bol-observaciones textarea {
+        color: transparent !important;
+    }
+
+    @page {
+        size: 21.6cm 33cm;
+        margin: 0;
+    }
+}
+
+/* ── VISUALIZACIÓN EN PANTALLA ─────────────── */
+/* La hoja conserva 21.6 × 33 cm reales.
+   El zoom es solo visual y no afecta la impresión. */
+.envoltura-hoja {
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+    padding: 10px 0;
+}
+
+.envoltura-hoja>.hoja-oficio {
+    transform: scale(1.35);
+    transform-origin: top center;
+    margin-bottom: calc(33cm * 0.35);
+    flex-shrink: 0;
+}
+
+@media (max-width: 1500px) {
+    .envoltura-hoja>.hoja-oficio {
+        transform: scale(1.15);
+        margin-bottom: calc(33cm * 0.15);
+    }
+}
+
+@media (max-width: 1250px) {
+    .envoltura-hoja>.hoja-oficio {
+        transform: scale(1);
+        margin-bottom: 0;
+    }
+}
+
+@media (max-width: 1000px) {
+    .envoltura-hoja>.hoja-oficio {
+        transform: scale(.82);
+        margin-bottom: calc(-33cm * 0.18);
+    }
+}
+
+@media (max-width: 800px) {
+    .envoltura-hoja>.hoja-oficio {
+        transform: scale(.62);
+        margin-bottom: calc(-33cm * 0.38);
+    }
+}
+
+@media (max-width: 620px) {
+    .envoltura-hoja>.hoja-oficio {
+        transform: scale(.45);
+        margin-bottom: calc(-33cm * 0.55);
+    }
+}
+
+@media print {
+    .envoltura-hoja {
+        transform: none !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+
+    .envoltura-hoja>.hoja-oficio {
+        transform: none !important;
+        margin-bottom: 0 !important;
+    }
+}

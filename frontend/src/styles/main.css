@@ -1,0 +1,547 @@
+/* ═══════════════════════════════════════════════════
+   SISTEMA BOMBEROS VOLUNTARIOS 39ª COMPAÑÍA
+   ═══════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+    /* Identidad institucional */
+    --rojo-bomberos: #C62828;
+    --rojo-oscuro: #8E1F1F;
+    --rojo-claro: #EF5350;
+
+    /* Superficies — tema claro */
+    --fondo: #F4F6F8;
+    --superficie: #FFFFFF;
+    --superficie-alt: #FAFBFC;
+    --borde: #E2E6EA;
+    --borde-fuerte: #CBD2D9;
+
+    /* Texto */
+    --texto: #1A202C;
+    --texto-suave: #5A6472;
+    --texto-tenue: #8A94A2;
+
+    /* Estados */
+    --exito: #2E7D32;
+    --exito-fondo: #E8F5E9;
+    --alerta: #F57C00;
+    --alerta-fondo: #FFF3E0;
+    --peligro: #C62828;
+    --peligro-fondo: #FFEBEE;
+    --info: #1565C0;
+    --info-fondo: #E3F2FD;
+
+    /* Barra lateral */
+    --lateral: #1C2331;
+    --lateral-activo: #2A3547;
+    --lateral-texto: #B8C2D0;
+
+    /* Elevación */
+    --sombra-sm: 0 1px 2px rgba(16, 24, 40, .06);
+    --sombra: 0 2px 8px rgba(16, 24, 40, .08);
+    --sombra-md: 0 6px 20px rgba(16, 24, 40, .10);
+    --sombra-lg: 0 16px 40px rgba(16, 24, 40, .16);
+
+    --radio-sm: 6px;
+    --radio: 10px;
+    --radio-lg: 16px;
+
+    --transicion: 180ms cubic-bezier(.4, 0, .2, 1);
+}
+
+[data-tema="oscuro"] {
+    --fondo: #11151C;
+    --superficie: #1A1F28;
+    --superficie-alt: #212832;
+    --borde: #2C3440;
+    --borde-fuerte: #3A4351;
+
+    --texto: #E8ECF1;
+    --texto-suave: #A0AABA;
+    --texto-tenue: #6B7688;
+
+    --exito-fondo: #14301A;
+    --alerta-fondo: #33240B;
+    --peligro-fondo: #331416;
+    --info-fondo: #0F2438;
+
+    --lateral: #0D1117;
+    --lateral-activo: #1C2331;
+
+    --sombra-sm: 0 1px 2px rgba(0, 0, 0, .4);
+    --sombra: 0 2px 8px rgba(0, 0, 0, .45);
+    --sombra-md: 0 6px 20px rgba(0, 0, 0, .5);
+    --sombra-lg: 0 16px 40px rgba(0, 0, 0, .6);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--fondo);
+    color: var(--texto);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    transition: background var(--transicion), color var(--transicion);
+}
+
+/* ── TIPOGRAFÍA ────────────────────────────────── */
+h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+h2 {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+}
+
+h3 {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+h4 {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.titulo-seccion {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 22px;
+}
+
+.titulo-seccion h1 {
+    color: var(--texto);
+}
+
+.titulo-seccion .sub {
+    color: var(--texto-suave);
+    font-size: 13px;
+}
+
+/* ── TARJETAS ──────────────────────────────────── */
+.tarjeta {
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio-lg);
+    box-shadow: var(--sombra-sm);
+    transition: box-shadow var(--transicion), border-color var(--transicion);
+}
+
+.tarjeta:hover {
+    box-shadow: var(--sombra);
+}
+
+.tarjeta-cabecera {
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--borde);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tarjeta-cuerpo {
+    padding: 22px;
+}
+
+/* ── BOTONES ───────────────────────────────────── */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 18px;
+    font: inherit;
+    font-weight: 500;
+    font-size: 13.5px;
+    border: 1px solid transparent;
+    border-radius: var(--radio);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--transicion);
+}
+
+.btn:active {
+    transform: translateY(1px);
+}
+
+.btn:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primario {
+    background: var(--rojo-bomberos);
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(198, 40, 40, .3);
+}
+
+.btn-primario:hover:not(:disabled) {
+    background: var(--rojo-oscuro);
+    box-shadow: 0 3px 10px rgba(198, 40, 40, .35);
+}
+
+.btn-secundario {
+    background: var(--superficie);
+    color: var(--texto);
+    border-color: var(--borde-fuerte);
+}
+
+.btn-secundario:hover:not(:disabled) {
+    background: var(--superficie-alt);
+    border-color: var(--texto-tenue);
+}
+
+.btn-exito {
+    background: var(--exito);
+    color: #fff;
+}
+
+.btn-exito:hover:not(:disabled) {
+    filter: brightness(.92);
+}
+
+.btn-peligro {
+    background: var(--peligro);
+    color: #fff;
+}
+
+.btn-peligro:hover:not(:disabled) {
+    filter: brightness(.92);
+}
+
+.btn-plano {
+    background: transparent;
+    color: var(--texto-suave);
+}
+
+.btn-plano:hover:not(:disabled) {
+    background: var(--superficie-alt);
+    color: var(--texto);
+}
+
+.btn-sm {
+    padding: 7px 13px;
+    font-size: 12.5px;
+}
+
+.btn-icono {
+    padding: 9px;
+    border-radius: var(--radio);
+}
+
+/* ── FORMULARIOS ───────────────────────────────── */
+.campo {
+    margin-bottom: 16px;
+}
+
+.campo label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--texto-suave);
+}
+
+.campo label .req {
+    color: var(--peligro);
+    margin-left: 2px;
+}
+
+.control {
+    width: 100%;
+    padding: 10px 13px;
+    font: inherit;
+    font-size: 13.5px;
+    color: var(--texto);
+    background: var(--superficie);
+    border: 1px solid var(--borde-fuerte);
+    border-radius: var(--radio);
+    transition: border-color var(--transicion), box-shadow var(--transicion);
+}
+
+.control:focus {
+    outline: none;
+    border-color: var(--rojo-bomberos);
+    box-shadow: 0 0 0 3px rgba(198, 40, 40, .12);
+}
+
+.control:disabled {
+    background: var(--superficie-alt);
+    color: var(--texto-tenue);
+}
+
+.control.error {
+    border-color: var(--peligro);
+}
+
+textarea.control {
+    resize: vertical;
+    min-height: 74px;
+}
+
+select.control {
+    cursor: pointer;
+}
+
+.mensaje-error {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: var(--peligro);
+}
+
+.rejilla {
+    display: grid;
+    gap: 14px;
+}
+
+.rejilla-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.rejilla-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.rejilla-4 {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 900px) {
+
+    .rejilla-3,
+    .rejilla-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+
+    .rejilla-2,
+    .rejilla-3,
+    .rejilla-4 {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── TABLAS ────────────────────────────────────── */
+.tabla-contenedor {
+    overflow-x: auto;
+    border-radius: var(--radio-lg);
+    border: 1px solid var(--borde);
+    background: var(--superficie);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+
+thead th {
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--texto-suave);
+    background: var(--superficie-alt);
+    border-bottom: 1px solid var(--borde);
+    white-space: nowrap;
+}
+
+tbody td {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--borde);
+    color: var(--texto);
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+tbody tr {
+    transition: background var(--transicion);
+}
+
+tbody tr:hover {
+    background: var(--superficie-alt);
+}
+
+/* ── ETIQUETAS DE ESTADO ───────────────────────── */
+.etiqueta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 11px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.etiqueta::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.et-exito {
+    background: var(--exito-fondo);
+    color: var(--exito);
+}
+
+.et-alerta {
+    background: var(--alerta-fondo);
+    color: var(--alerta);
+}
+
+.et-peligro {
+    background: var(--peligro-fondo);
+    color: var(--peligro);
+}
+
+.et-info {
+    background: var(--info-fondo);
+    color: var(--info);
+}
+
+/* ── ANIMACIONES ───────────────────────────────── */
+@keyframes aparecer {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes escalar {
+    from {
+        opacity: 0;
+        transform: scale(.96) translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes deslizar {
+    from {
+        opacity: 0;
+        transform: translateX(28px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes girar {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animar {
+    animation: aparecer 280ms ease both;
+}
+
+/* ── CARGADOR ──────────────────────────────────── */
+.cargador {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, .3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: girar 600ms linear infinite;
+}
+
+.cargador-oscuro {
+    border-color: var(--borde-fuerte);
+    border-top-color: var(--rojo-bomberos);
+}
+
+/* ── UTILIDADES ────────────────────────────────── */
+.vacio {
+    padding: 56px 24px;
+    text-align: center;
+    color: var(--texto-tenue);
+}
+
+.vacio svg {
+    margin-bottom: 14px;
+    opacity: .45;
+}
+
+.vacio p {
+    font-size: 14px;
+}
+
+.fila {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.fila-fin {
+    justify-content: flex-end;
+}
+
+.fila-entre {
+    justify-content: space-between;
+}
+
+.crecer {
+    flex: 1;
+}
+
+::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--borde-fuerte);
+    border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--texto-tenue);
+}
+
+@media print {
+    .no-imprimir {
+        display: none !important;
+    }
+
+    body {
+        background: #fff;
+    }
+}
