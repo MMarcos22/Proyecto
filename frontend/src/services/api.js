@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+// El servidor está en la misma computadora que sirve el sistema: si se abre desde
+// otra computadora (http://192.168.1.20:5173), la API se busca en esa dirección y
+// no en «localhost», que sería la computadora de quien lo abre.
+// VITE_API_URL (en frontend/.env) la cambia por completo; VITE_API_PUERTO solo el puerto.
+export const API_URL = import.meta.env.VITE_API_URL
+    || `${window.location.protocol}//${window.location.hostname}:${import.meta.env.VITE_API_PUERTO || 3000}/api`;
 
 const api = axios.create({
     baseURL: API_URL,
@@ -29,7 +34,7 @@ export default api;
 
 // Mensaje legible de un error de axios
 export const mensajeError = (e, porDefecto = 'No se pudo completar la operación') =>
-    e?.response?.data?.mensaje || (e?.request && !e?.response ? 'No hay conexión con el servidor' : porDefecto);
+    e?.response?.data?.mensaje || (e?.request && !e?.response ? `No hay conexión con el servidor (${API_URL}). Revise que el backend esté encendido` : porDefecto);
 
 // Descarga un archivo binario respetando el nombre que envía el servidor
 export const descargar = async (ruta, params, nombre) => {

@@ -3,8 +3,10 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 require('dotenv').config();
 
-// Bloqueo temporal tras intentos fallidos (por IP + usuario)
-const INTENTOS_MAX = 5;
+// Bloqueo temporal tras intentos fallidos (por IP + usuario). El límite es alto a
+// propósito: el sistema se usa en emergencias y un error al escribir la clave no
+// debe dejar a nadie fuera; 200 intentos solo los alcanza un ataque de fuerza bruta.
+const INTENTOS_MAX = 200;
 const BLOQUEO_MS = 15 * 60 * 1000;
 const fallidos = new Map();
 
@@ -71,7 +73,15 @@ const iniciarSesion = async (req, res) => {
 
     } catch (error) {
         console.error('Error al iniciar sesión:', error);
-        res.status(500).json({ mensaje: 'Error al procesar la solicitud' });
+        // En una computadora nueva lo usual es la base de datos: se dice cuál es el problema
+        const causa = {
+            ECONNREFUSED: 'PostgreSQL no está encendido o no está en el puerto de DB_PORT',
+            '28P01': 'el usuario o la contraseña de la base de datos (DB_USER, DB_PASSWORD en backend/.env) no son correctos',
+            '3D000': `no existe la base de datos «${process.env.DB_NAME}»; créela y ejecute schema.sql`,
+            '42P01': 'faltan tablas; ejecute schema.sql y luego npm run migrar',
+            '42703': 'faltan columnas; ejecute npm run migrar'
+        }[error.code];
+        res.status(500).json({ mensaje: causa ? `No se pudo iniciar sesión: ${causa}` : 'Error al procesar la solicitud' });
     }
 };
 

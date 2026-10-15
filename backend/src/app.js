@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const { pool } = require('./config/database');
@@ -7,12 +8,22 @@ const { pool } = require('./config/database');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Orígenes permitidos separados por coma; por defecto cualquier puerto de localhost (Vite puede usar 5173, 5174...)
-const ORIGENES = process.env.CORS_ORIGENES
-    ? process.env.CORS_ORIGENES.split(',').map(o => o.trim())
-    : /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
+// Sin JWT_SECRET en el .env (p. ej. copiado de .env.example) no se podía iniciar
+// sesión. Se usa una clave aleatoria mientras el servidor esté encendido; las
+// sesiones se cierran al reiniciarlo. Defina JWT_SECRET para que duren.
+if (!process.env.JWT_SECRET?.trim()) {
+    process.env.JWT_SECRET = crypto.randomBytes(48).toString('hex');
+    console.warn('Aviso: JWT_SECRET no está definido en backend/.env; se usa una clave temporal.');
+}
 
-app.use(cors({ origin: ORIGENES, exposedHeaders: ['Content-Disposition'] }));
+// Orígenes permitidos: cualquier puerto de esta computadora y de la red local de la
+// estación (192.168.x.x, 10.x.x.x, 172.16–31.x.x), para usar el sistema desde
+// otra computadora. CORS_ORIGENES agrega otros orígenes, separados por coma.
+const RED_LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[a-z0-9-]+)(:\d+)?$/i;
+const EXTRA = (process.env.CORS_ORIGENES || '').split(',').map(o => o.trim()).filter(Boolean);
+const origenPermitido = (origen, listo) => listo(null, !origen || RED_LOCAL.test(origen) || EXTRA.includes(origen));
+
+app.use(cors({ origin: origenPermitido, exposedHeaders: ['Content-Disposition'] }));
 app.use(express.json({ limit: '1mb' }));
 
 app.use('/api/auth', require('./routes/auth.routes'));

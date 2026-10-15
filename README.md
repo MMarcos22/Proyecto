@@ -21,6 +21,8 @@ El diseño completo y su justificación están en [docs/analisis-del-sistema.md]
 3. Backend: `cd backend && npm install && npm run migrar && npm run dev`
 4. Frontend: `cd frontend && npm install && npm run dev` → http://localhost:5173
 
+**Desde otra computadora de la estación:** abra `http://IP-DE-ESTA-COMPUTADORA:5173` (Vite ya queda visible en la red). El sistema busca el servidor en esa misma dirección, puerto 3000; si el backend usa otro puerto, ponga `VITE_API_PUERTO=3100` en `frontend/.env`. Si Windows pregunta, permita Node.js en el firewall.
+
 `npm run migrar` aplica en orden los archivos de `backend/src/database/migraciones/` que falten; es seguro ejecutarlo varias veces.
 Todo funciona en la red local de la estación, sin internet (fuentes incluidas).
 

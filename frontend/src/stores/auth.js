@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { autenticacion } from '../services/api';
+import { autenticacion, mensajeError } from '../services/api';
 
 export const useAuthStore = defineStore('auth', () => {
     const usuario = ref(null);
@@ -41,10 +41,7 @@ export const useAuthStore = defineStore('auth', () => {
             localStorage.setItem('usuario', JSON.stringify(data.usuario));
             return { ok: true };
         } catch (error) {
-            return {
-                ok: false,
-                mensaje: error.response?.data?.mensaje || 'No se pudo conectar con el servidor'
-            };
+            return { ok: false, mensaje: mensajeError(error, 'No se pudo iniciar sesión') };
         } finally {
             cargando.value = false;
         }
