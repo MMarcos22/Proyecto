@@ -68,11 +68,8 @@ export const dinero = (v) => {
     return Number.isNaN(Number(v)) ? String(v) : `Q ${montoTexto(v)}`;
 };
 
-// Teléfono de Guatemala: 8 dígitos, «0000 0000»
-export const telefonoTexto = (v) => {
-    const n = String(v ?? '').replace(/\D/g, '').slice(0, 8);
-    return n.length > 4 ? `${n.slice(0, 4)} ${n.slice(4)}` : n;
-};
+// Teléfono de Guatemala: solo dígitos y no más de 8
+export const telefonoTexto = (v) => String(v ?? '').replace(/\D/g, '').slice(0, 8);
 export const telefonoCompleto = (v) => String(v ?? '').replace(/\D/g, '').length === 8;
 
 export const minutos = (m) => {

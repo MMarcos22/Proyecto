@@ -54,12 +54,12 @@ const HORA = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 
 const limpiar = (v) => (v === '' || v === undefined ? null : v);
 
-// Teléfono de Guatemala: 8 dígitos. Se guarda como «0000 0000».
+// Teléfono de Guatemala: exactamente 8 dígitos, que se guardan sin espacios.
 const NO_APLICA = 'No aplica';
 const telefonoValido = (t) => t == null || String(t).trim() === '' || t === NO_APLICA || /^\d{8}$/.test(String(t).replace(/\s/g, ''));
 const formatoTelefono = (t) => {
     const n = String(t ?? '').replace(/\D/g, '');
-    return n.length === 8 ? `${n.slice(0, 4)} ${n.slice(4)}` : t;
+    return n.length === 8 ? n : t;
 };
 const ERROR_TELEFONO = 'El teléfono debe tener 8 dígitos';
 const vacio = (v) => v === null || v === undefined || String(v).trim() === '';

@@ -41,8 +41,8 @@
         <div class="rejilla rejilla-2">
           <div class="campo">
             <label for="tel">Teléfono</label>
-            <input id="tel" :value="d.solicitud_por_telefono" class="control num" inputmode="numeric" maxlength="9"
-                   placeholder="0000 0000" autocomplete="off" @input="escribirTelefono" @blur="buscarLlamante" />
+            <input id="tel" :value="d.solicitud_por_telefono" class="control num" inputmode="numeric" maxlength="8" pattern="\d{8}"
+                   placeholder="8 dígitos" autocomplete="off" @input="escribirTelefono" @blur="buscarLlamante" />
             <span v-if="telefonoIncompleto" class="ayuda error-campo">El teléfono lleva 8 dígitos.</span>
           </div>
           <div class="campo">
