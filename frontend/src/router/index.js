@@ -9,7 +9,6 @@ import { useAuthStore } from '../stores/auth';
 const ADMIN = ['administrador'];
 const GESTION = ['administrador', 'direccion'];
 const ATIENDEN = ['cabina', 'operativo'];
-const REGISTRAN = ['administrador', 'cabina', 'operativo'];
 const CONSULTAN = ['administrador', 'operativo', 'direccion'];
 const IMPRIMEN = ['administrador', 'operativo', 'cabina'];
 
@@ -52,7 +51,7 @@ const rutas = [
             vista('historial', 'historial', 'Historial', { seccion: 'boletas', titulo: 'Historial', pestana: 'Historial', roles: CONSULTAN }),
             vista('imprimir', 'imprimir', 'Imprimir', { seccion: 'boletas', titulo: 'Por imprimir', pestana: 'Por imprimir', roles: IMPRIMEN }),
             vista('historial/:id', 'detalle-servicio', 'DetalleServicio', { seccion: 'boletas', titulo: 'Boleta' }),
-            vista('boleta/nueva', 'nueva-boleta', 'NuevaBoleta', { seccion: 'boletas', titulo: 'Registrar llamada', roles: REGISTRAN }),
+            vista('boleta/nueva', 'nueva-boleta', 'NuevaBoleta', { seccion: 'boletas', titulo: 'Registrar llamada', roles: ATIENDEN }),
             vista('boleta/:id', 'completar-boleta', 'CompletarBoleta', { seccion: 'boletas', titulo: 'Completar boleta', roles: ATIENDEN }),
 
             vista('servicios', 'servicios', 'AnalisisServicios', { seccion: 'servicios', titulo: 'Análisis de servicios', roles: GESTION }),

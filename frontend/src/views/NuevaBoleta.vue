@@ -147,7 +147,6 @@ import { reactive, ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { emergencias, turnos, mensajeError } from '../services/api';
 import { useNotificacionesStore } from '../stores/notificaciones';
-import { useAuthStore } from '../stores/auth';
 import { useImpresionStore } from '../stores/impresion';
 import { useCatalogosStore, TIPOS, nombreTipo } from '../stores/catalogos';
 import { hoy, plural, fechaCorta, telefonoTexto, telefonoCompleto } from '../utils/formato';
@@ -162,7 +161,6 @@ import MenuDesplegable from '../components/MenuDesplegable.vue';
 const ruta = useRoute();
 const router = useRouter();
 const notif = useNotificacionesStore();
-const auth = useAuthStore();
 const impresion = useImpresionStore();
 const catalogos = useCatalogosStore();
 
@@ -330,8 +328,7 @@ const guardar = async (regreso) => {
     });
     impresion.contarPendientes();
     notif.exito(data.mensaje);
-    // La administración no completa boletas: ve la que acaba de registrar
-    router.push(!regreso ? '/inicio' : auth.atiendeServicios ? `/boleta/${data.emergencia.id}` : `/historial/${data.emergencia.id}`);
+    router.push(regreso ? `/boleta/${data.emergencia.id}` : '/inicio');
   } catch (e) {
     notif.error(mensajeError(e, 'No se pudo registrar la llamada'));
   } finally {

@@ -16,10 +16,9 @@ const permitirRoles = (...rolesPermitidos) => {
 };
 
 const soloAdministrador = permitirRoles('administrador');
-// Escribir boletas (regreso, completar): cabina y operativo
+// Llenar boletas (registrar la llamada, el regreso y completarla): cabina y operativo.
+// La administración las ve, revisa y firma, pero no las llena.
 const atiendenServicios = permitirRoles('cabina', 'operativo');
-// Registrar una llamada (botón rojo): también la administración
-const registranLlamadas = permitirRoles('administrador', 'cabina', 'operativo');
 // Acciones de boleta que también hace la administración (anular un servicio en curso, imprimir)
 const ambosRoles = permitirRoles('administrador', 'operativo', 'cabina');
 // Consultar: cualquiera con sesión
@@ -38,6 +37,6 @@ const soloLecturaDireccion = (req, res, next) => {
 };
 
 module.exports = {
-    permitirRoles, soloAdministrador, atiendenServicios, registranLlamadas, ambosRoles, todosLosRoles, gestion, consultaInstitucional,
+    permitirRoles, soloAdministrador, atiendenServicios, ambosRoles, todosLosRoles, gestion, consultaInstitucional,
     soloLecturaDireccion
 };
