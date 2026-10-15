@@ -70,109 +70,6 @@ const obtenerControlMensual = async (m, a) => {
     return { categorias, mesAnterior, anioAnterior };
 };
 
-// ── ESTADÍSTICAS DEL PANEL ───────────────────────
-const obtenerEstadisticas = async (req, res) => {
-    const { mes, anio } = req.query;
-    const periodo = [];
-    const valores = [];
-
-    if (mes) { valores.push(mes); periodo.push(`EXTRACT(MONTH FROM fecha) = $${valores.length}`); }
-    if (anio) { valores.push(anio); periodo.push(`EXTRACT(YEAR  FROM fecha) = $${valores.length}`); }
-    const where = periodo.length ? `WHERE ${periodo.join(' AND ')}` : '';
-
-    try {
-        const porTipo = await query(`
-      SELECT tipo_servicio, COUNT(*)::int AS total
-      FROM emergencias ${where}
-      GROUP BY tipo_servicio ORDER BY total DESC`, valores);
-
-        const totalServicios = await query(
-            `SELECT COUNT(*)::int AS total FROM emergencias ${where}`, valores);
-
-        const porZona = await query(`
-      SELECT COALESCE(zona,'Sin especificar') AS zona, COUNT(*)::int AS total
-      FROM emergencias ${where}
-      GROUP BY zona ORDER BY total DESC LIMIT 10`, valores);
-
-        const alertas = await query(`
-      SELECT COUNT(*)::int AS total FROM insumos
-      WHERE activo = TRUE AND stock_actual <= stock_minimo`);
-
-        const agotados = await query(`
-      SELECT COUNT(*)::int AS total FROM insumos
-      WHERE activo = TRUE AND stock_actual = 0`);
-
-        res.json({
-            total_servicios: totalServicios.rows[0].total,
-            servicios_por_tipo: porTipo.rows,
-            servicios_por_zona: porZona.rows,
-            insumos_bajo_minimo: alertas.rows[0].total,
-            insumos_agotados: agotados.rows[0].total
-        });
-
-    } catch (error) {
-        console.error('Error al obtener estadísticas:', error);
-        res.status(500).json({ mensaje: 'Error al generar las estadísticas' });
-    }
-};
-
-// ── INFORME INTEGRADO ────────────────────────────
-const reporteIntegrado = async (req, res) => {
-    const { mes, anio } = req.query;
-    const periodo = [];
-    const valores = [];
-
-    if (mes) { valores.push(mes); periodo.push(`EXTRACT(MONTH FROM e.fecha) = $${valores.length}`); }
-    if (anio) { valores.push(anio); periodo.push(`EXTRACT(YEAR  FROM e.fecha) = $${valores.length}`); }
-    const where = periodo.length ? `WHERE ${periodo.join(' AND ')}` : '';
-
-    try {
-        const consumoPorTipo = await query(`
-      SELECT e.tipo_servicio,
-             COUNT(DISTINCT e.id)::int AS servicios_atendidos,
-             COALESCE(SUM(m.cantidad),0)::int AS insumos_consumidos
-      FROM emergencias e
-      LEFT JOIN movimientos_inventario m
-             ON m.emergencia_id = e.id AND m.tipo_movimiento = 'salida'
-      ${where}
-      GROUP BY e.tipo_servicio
-      ORDER BY insumos_consumidos DESC`, valores);
-
-        const consumoPorZona = await query(`
-      SELECT COALESCE(e.zona,'Sin especificar') AS zona,
-             COUNT(DISTINCT e.id)::int AS servicios_atendidos,
-             COALESCE(SUM(m.cantidad),0)::int AS insumos_consumidos
-      FROM emergencias e
-      LEFT JOIN movimientos_inventario m
-             ON m.emergencia_id = e.id AND m.tipo_movimiento = 'salida'
-      ${where}
-      GROUP BY e.zona
-      ORDER BY insumos_consumidos DESC`, valores);
-
-        const insumosMasUsados = await query(`
-      SELECT i.nombre, i.categoria,
-             SUM(m.cantidad)::int AS total_consumido,
-             COUNT(DISTINCT m.emergencia_id)::int AS servicios
-      FROM movimientos_inventario m
-      JOIN insumos i    ON i.id = m.insumo_id
-      JOIN emergencias e ON e.id = m.emergencia_id
-      ${where ? where + " AND m.tipo_movimiento = 'salida'" : "WHERE m.tipo_movimiento = 'salida'"}
-      GROUP BY i.nombre, i.categoria
-      ORDER BY total_consumido DESC LIMIT 15`, valores);
-
-        res.json({
-            periodo: { mes: mes ? MESES[mes - 1] : 'Todos', anio: anio || 'Todos' },
-            consumo_por_tipo_servicio: consumoPorTipo.rows,
-            consumo_por_zona: consumoPorZona.rows,
-            insumos_mas_utilizados: insumosMasUsados.rows
-        });
-
-    } catch (error) {
-        console.error('Error al generar informe integrado:', error);
-        res.status(500).json({ mensaje: 'Error al generar el informe' });
-    }
-};
-
 // ── EXCEL CONTROL MENSUAL ────────────────────────
 const inventarioExcel = async (req, res) => {
     const { mes, anio } = req.query;
@@ -442,7 +339,4 @@ const valeSalidasExcel = async (req, res) => {
     }
 };
 
-module.exports = {
-    obtenerEstadisticas, reporteIntegrado,
-    inventarioExcel, inventarioControlMensual, valeSalidasExcel
-};
+module.exports = { inventarioExcel, inventarioControlMensual, valeSalidasExcel };

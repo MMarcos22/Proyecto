@@ -2,199 +2,128 @@
   <div class="animar">
     <div class="titulo-seccion">
       <div>
-        <h1>Movimientos de inventario</h1>
-        <p class="sub">Historial de entradas y salidas con su trazabilidad</p>
+        <h1>Movimientos por insumo y lote</h1>
       </div>
     </div>
 
-    <div class="tarjeta panel-filtros">
-      <div class="rejilla rejilla-4">
-        <div class="campo">
-          <label>Tipo de movimiento</label>
-          <select v-model="filtros.tipo" class="control">
-            <option value="">Todos</option>
-            <option value="entrada">Entradas</option>
-            <option value="salida">Salidas</option>
-          </select>
-        </div>
-        <div class="campo">
-          <label>Categoría</label>
-          <select v-model="filtros.categoria" class="control">
-            <option value="">Todas</option>
-            <option value="prehospitalario">Pre-hospitalario</option>
-            <option value="cafeteria">Cafetería</option>
-            <option value="libreria">Librería</option>
-            <option value="limpieza">Limpieza</option>
-          </select>
-        </div>
-        <div class="campo">
-          <label>Mes</label>
-          <select v-model="filtros.mes" class="control">
-            <option value="">Todos</option>
-            <option v-for="(m,i) in meses" :key="i" :value="i+1">{{ m }}</option>
-          </select>
-        </div>
-        <div class="campo">
-          <label>Año</label>
-          <select v-model="filtros.anio" class="control">
-            <option value="">Todos</option>
-            <option v-for="a in anios" :key="a" :value="a">{{ a }}</option>
-          </select>
-        </div>
+    <div class="barra-filtros">
+      <div class="busqueda">
+        <Icono nombre="buscar" :tam="15" />
+        <input v-model="texto" class="control" type="search" placeholder="Insumo, lote o número de control" aria-label="Buscar" />
       </div>
-
-      <div class="fila fila-fin">
-        <button class="btn btn-plano btn-sm" @click="limpiar">Limpiar</button>
-        <button class="btn btn-primario btn-sm" @click="cargar">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <span>Buscar</span>
-        </button>
+      <div class="segmentos" role="group" aria-label="Tipo de movimiento">
+        <button :class="{ activo: !f.tipo }" @click="f.tipo = ''; f.motivo = ''">Todos <span class="cuenta">{{ totales.n }}</span></button>
+        <button :class="{ activo: f.tipo === 'entrada' }" @click="f.tipo = 'entrada'; f.motivo = ''">Entradas <span class="cuenta">{{ totales.entradas }}</span></button>
+        <button :class="{ activo: f.tipo === 'salida' }" @click="f.tipo = 'salida'; f.motivo = ''">Salidas <span class="cuenta">{{ totales.salidas }}</span></button>
+      </div>
+      <select v-model="f.motivo" class="control control-sm" style="width:auto" :disabled="!f.tipo" aria-label="Motivo">
+        <option value="">Todos los motivos</option>
+        <option v-for="m in catalogos.motivos(f.tipo)" :key="m.valor" :value="m.valor">{{ m.nombre }}</option>
+      </select>
+      <select v-model="f.categoria" class="control control-sm" style="width:auto" aria-label="Categoría">
+        <option value="">Todas las categorías</option>
+        <option v-for="c in catalogos.categorias" :key="c.valor" :value="c.valor">{{ c.nombre }}</option>
+      </select>
+      <div class="fila">
+        <input v-model="f.desde" type="date" class="control control-sm mono" aria-label="Desde" />
+        <span class="tenue">a</span>
+        <input v-model="f.hasta" type="date" class="control control-sm mono" aria-label="Hasta" />
       </div>
     </div>
 
-    <div v-if="cargando" class="tarjeta estado-carga">
-      <span class="cargador cargador-oscuro"></span>
-      <p>Cargando movimientos</p>
+    <div class="tabla-contenedor">
+      <table>
+        <thead>
+          <tr><th>Fecha</th><th>Insumo</th><th>Movimiento</th><th class="num">Cantidad</th><th>Lote</th><th>Referencia</th><th>Registró</th></tr>
+        </thead>
+        <tbody>
+          <template v-if="cargando && !movimientos.length">
+            <tr v-for="i in 8" :key="i"><td colspan="7"><div class="esqueleto" style="height:14px"></div></td></tr>
+          </template>
+          <tr v-for="m in movimientos" :key="m.id">
+            <td class="mono">{{ fecha(m.fecha_movimiento) }}</td>
+            <td>
+              <router-link :to="`/inventario/${m.insumo_id}`" class="celda-principal enlace-limpio">{{ m.insumo }}</router-link>
+              <span class="celda-sec">{{ catalogos.nombreCategoria(m.categoria) }}</span>
+            </td>
+            <td><span class="mov" :class="m.tipo_movimiento">{{ catalogos.nombreMotivo(m.tipo_movimiento, m.motivo) }}</span></td>
+            <td class="num" :class="m.tipo_movimiento === 'entrada' ? 'entra' : 'sale'">
+              {{ m.tipo_movimiento === 'entrada' ? '+' : '−' }}{{ m.cantidad }} <span class="tenue">{{ m.unidad_medida }}</span>
+            </td>
+            <td class="mono">{{ m.numero_lote || '—' }}<span v-if="m.fecha_vencimiento" class="celda-sec">vence {{ fecha(m.fecha_vencimiento) }}</span></td>
+            <td>
+              <router-link v-if="m.emergencia_id" :to="`/historial/${m.emergencia_id}`" class="mono enlace-ref">{{ m.servicio }}</router-link>
+              <span v-else-if="m.documento">{{ m.documento }}</span>
+              <span v-else class="tenue">{{ m.observaciones || '—' }}</span>
+            </td>
+            <td class="suave">{{ m.registrado_por }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="!cargando && !movimientos.length" class="vacio">
+        <Icono nombre="movimientos" :tam="28" />
+        <strong>Sin movimientos</strong>
+        <p>No hay entradas ni salidas con estos filtros.</p>
+      </div>
+      <Paginador :total="totales.n" :pagina="pagina" :tamano="tamano" @update:pagina="(p) => { pagina = p; cargar(); }" />
     </div>
 
-    <div v-else-if="!movimientos.length" class="tarjeta">
-      <div class="vacio"><p>No se registraron movimientos con los criterios indicados</p></div>
-    </div>
-
-    <template v-else>
-      <div class="totales">
-        <div class="total-item">
-          <span class="punto-entrada"></span>
-          <span>Entradas: <strong>{{ totalEntradas }}</strong></span>
-        </div>
-        <div class="total-item">
-          <span class="punto-salida"></span>
-          <span>Salidas: <strong>{{ totalSalidas }}</strong></span>
-        </div>
-        <div class="crecer"></div>
-        <span class="conteo">{{ movimientos.length }} movimientos</span>
-      </div>
-
-      <div class="tabla-contenedor">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th><th>Insumo</th><th>Categoría</th><th>Tipo</th>
-              <th>Cantidad</th><th>Lote</th><th>Vencimiento</th>
-              <th>Servicio</th><th>Registró</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="m in movimientos" :key="m.id">
-              <td>{{ formatoFecha(m.fecha_movimiento) }}</td>
-              <td class="celda-larga">{{ m.insumo }}</td>
-              <td class="capitalizar">{{ m.categoria }}</td>
-              <td>
-                <span class="etiqueta" :class="m.tipo_movimiento === 'entrada' ? 'et-exito' : 'et-info'">
-                  {{ m.tipo_movimiento === 'entrada' ? 'Entrada' : 'Salida' }}
-                </span>
-              </td>
-              <td><strong>{{ m.cantidad }}</strong></td>
-              <td>{{ m.numero_lote || '—' }}</td>
-              <td>{{ m.fecha_vencimiento ? formatoFecha(m.fecha_vencimiento) : '—' }}</td>
-              <td>
-                <span v-if="m.servicio" class="vinculo-servicio">{{ m.servicio }}</span>
-                <span v-else>—</span>
-              </td>
-              <td class="celda-larga">{{ m.registrado_por }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </template>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
-import { inventario } from '../services/api';
+import { ref, reactive, watch, onMounted } from 'vue';
+import { inventario, mensajeError } from '../services/api';
+import { useCatalogosStore } from '../stores/catalogos';
 import { useNotificacionesStore } from '../stores/notificaciones';
+import { fecha } from '../utils/formato';
+import Paginador from '../components/Paginador.vue';
+import Icono from '../components/Icono.vue';
 
+const catalogos = useCatalogosStore();
 const notif = useNotificacionesStore();
 
-const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-const anioActual = new Date().getFullYear();
-const anios = [anioActual, anioActual - 1, anioActual - 2];
-
+const f = reactive({ tipo: '', motivo: '', categoria: '', desde: '', hasta: '' });
+const texto = ref('');
 const movimientos = ref([]);
-const cargando    = ref(true);
-
-const filtros = reactive({ tipo: '', categoria: '', mes: '', anio: '' });
-
-const totalEntradas = computed(() =>
-  movimientos.value.filter(m => m.tipo_movimiento === 'entrada')
-    .reduce((a, m) => a + m.cantidad, 0));
-const totalSalidas = computed(() =>
-  movimientos.value.filter(m => m.tipo_movimiento === 'salida')
-    .reduce((a, m) => a + m.cantidad, 0));
-
-const formatoFecha = (f) => new Date(f).toLocaleDateString('es-GT',
-  { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC' });
+const totales = ref({ n: 0, entradas: 0, salidas: 0 });
+const pagina = ref(1);
+const tamano = 50;
+const cargando = ref(true);
 
 const cargar = async () => {
   cargando.value = true;
   try {
-    const params = {};
-    Object.entries(filtros).forEach(([k,v]) => { if (v) params[k] = v; });
+    const params = { pagina: pagina.value, tamano, texto: texto.value || undefined };
+    for (const [k, v] of Object.entries(f)) if (v) params[k] = v;
     const { data } = await inventario.movimientos(params);
     movimientos.value = data.movimientos;
-  } catch {
-    notif.error('No se pudieron cargar los movimientos');
+    totales.value = { n: data.total, entradas: data.entradas, salidas: data.salidas };
+  } catch (e) {
+    notif.error(mensajeError(e, 'No se pudieron cargar los movimientos'));
   } finally {
     cargando.value = false;
   }
 };
 
-const limpiar = () => {
-  Object.keys(filtros).forEach(k => filtros[k] = '');
-  cargar();
-};
+watch(f, () => { pagina.value = 1; cargar(); });
+let espera = null;
+watch(texto, () => { clearTimeout(espera); espera = setTimeout(() => { pagina.value = 1; cargar(); }, 300); });
 
-onMounted(cargar);
+onMounted(() => {
+  catalogos.cargar().catch(() => {});
+  cargar();
+});
 </script>
 
 <style scoped>
-.panel-filtros { padding: 18px 20px 14px; margin-bottom: 18px; }
-.panel-filtros .campo { margin-bottom: 12px; }
-
-.estado-carga {
-  display: flex; flex-direction: column; align-items: center; gap: 13px; padding: 56px;
-}
-.estado-carga p { color: var(--texto-suave); font-size: 13.5px; }
-
-.totales {
-  display: flex; align-items: center; gap: 20px;
-  margin-bottom: 12px;
-  font-size: 13px; color: var(--texto-suave);
-}
-.total-item { display: flex; align-items: center; gap: 7px; }
-.total-item strong { color: var(--texto); }
-.punto-entrada, .punto-salida {
-  width: 8px; height: 8px; border-radius: 50%;
-}
-.punto-entrada { background: var(--exito); }
-.punto-salida  { background: var(--info); }
-.conteo { font-size: 12.5px; }
-
-.vinculo-servicio {
-  padding: 2px 8px;
-  background: var(--superficie-alt);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
-  font-size: 12px; font-weight: 500;
-}
-
-.capitalizar { text-transform: capitalize; }
-.celda-larga {
-  max-width: 200px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
-}
+.enlace-limpio { text-decoration: none; }
+.enlace-limpio:hover { text-decoration: underline; text-underline-offset: 2px; }
+.mov { font-size: 12.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.mov::before { content: ''; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; }
+.mov.entrada::before { border-bottom: 6px solid var(--exito); }
+.mov.salida::before { border-top: 6px solid var(--peligro); }
+.entra { color: var(--exito); }
+.sale { color: var(--peligro); }
+.enlace-ref { font-size: 12px; font-weight: 600; }
 </style>

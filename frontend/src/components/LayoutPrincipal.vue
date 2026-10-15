@@ -1,182 +1,200 @@
 <template>
-  <div class="disposicion" :class="{ 'lateral-oculto': !lateralAbierto }">
+  <div class="marco" :class="{ 'lateral-abierto': lateralAbierto, imprimiendo: impresion.lote.length }">
+    <a href="#contenido" class="saltar">Saltar al contenido</a>
+
     <!-- ══ BARRA LATERAL ══════════════════════════ -->
-    <aside class="barra-lateral">
-      <div class="marca">
-        <img src="/LogoBomberos.png" alt="Bomberos 39ª Compañía" class="marca-logo" />
-        <div class="marca-texto">
-          <strong>39ª Compañía</strong>
-          <span>Bomberos Voluntarios</span>
+    <aside class="lateral no-imprimir" aria-label="Navegación principal">
+      <router-link to="/" class="marca">
+        <img src="/LogoBomberos.png" alt="" />
+        <div>
+          <strong>Bomberos Voluntarios</strong>
+          <span>39ª Compañía · Chiquimula</span>
         </div>
+      </router-link>
+
+      <div class="saludo">
+        <span class="avatar avatar-grande">{{ auth.iniciales }}</span>
+        <div><span>Hola,</span><strong>{{ primerNombre }}</strong></div>
       </div>
+
+      <router-link v-if="puedeRegistrar" to="/boleta/nueva" class="accion-registrar">
+        <Icono nombre="mas" :tam="18" :grosor="2.4" />Registrar llamada
+      </router-link>
 
       <nav class="navegacion">
-        <p class="grupo-titulo">Operación</p>
-
-        <router-link v-if="auth.esAdministrador" to="/panel" class="enlace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/>
-            <rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>
-          </svg>
-          <span>Panel general</span>
-        </router-link>
-
-        <router-link v-if="auth.esOperativo" to="/registrar" class="enlace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
-          </svg>
-          <span>Registrar servicio</span>
-        </router-link>
-
-        <router-link to="/historial" class="enlace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-          <span>Historial de servicios</span>
-        </router-link>
-
-        <p class="grupo-titulo">Inventario</p>
-
-        <router-link to="/inventario" class="enlace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
-          </svg>
-          <span>Existencias</span>
-          <span v-if="alertas.datos.resumen.total > 0" class="insignia">
-            {{ alertas.datos.resumen.total }}
-          </span>
-        </router-link>
-
-        <router-link to="/control-mensual" class="enlace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/>
-            <line x1="9" y1="9" x2="9" y2="21"/><line x1="15" y1="9" x2="15" y2="21"/>
-          </svg>
-          <span>Control mensual</span>
-        </router-link>
-
-        <router-link to="/movimientos" class="enlace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/>
-            <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/>
-          </svg>
-          <span>Movimientos</span>
-        </router-link>
-
-        <p class="grupo-titulo">Información</p>
-
-        <router-link to="/reportes" class="enlace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-          </svg>
-          <span>Informes</span>
-        </router-link>
-
-        <router-link v-if="auth.esAdministrador" to="/zonas" class="enlace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
-          </svg>
-          <span>Zonas de incidencia</span>
-        </router-link>
+        <section v-for="g in grupos" :key="g.clave">
+          <p v-if="g.nombre" class="grupo">{{ g.nombre }}</p>
+          <router-link v-for="e in g.enlaces" :key="e.clave" :to="e.to" class="enlace"
+                       :class="{ activo: ruta.meta.seccion === e.clave }">
+            <Icono :nombre="e.icono" :tam="18" />
+            <span>{{ e.nombre }}</span>
+            <span v-if="e.insignia" class="insignia" :title="e.ayudaInsignia">{{ e.insignia }}</span>
+          </router-link>
+        </section>
       </nav>
 
-      <div class="pie-lateral">
-        <div class="tarjeta-usuario">
-          <div class="avatar">{{ auth.iniciales }}</div>
-          <div class="usuario-datos">
-            <strong>{{ auth.usuario?.nombre }}</strong>
-            <span>{{ auth.esAdministrador ? 'Administrador' : 'Personal operativo' }}</span>
-          </div>
-        </div>
-        <button class="btn-salir" @click="confirmarSalida = true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-            <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          <span>Cerrar sesión</span>
-        </button>
-      </div>
     </aside>
 
-    <div v-if="lateralAbierto" class="velo-lateral" @click="lateralAbierto = false"></div>
+    <div class="velo" @click="lateralAbierto = false"></div>
 
-    <!-- ══ CONTENIDO ══════════════════════════════ -->
-    <div class="zona-principal">
+    <!-- ══ ÁREA PRINCIPAL ═════════════════════════ -->
+    <div class="principal">
       <header class="encabezado no-imprimir">
-        <button class="btn-menu" @click="lateralAbierto = !lateralAbierto">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
+        <button class="btn btn-plano btn-icono solo-movil" @click="lateralAbierto = true" aria-label="Abrir menú">
+          <Icono nombre="menu" :tam="18" />
         </button>
+
+        <nav class="migas" aria-label="Ubicación">
+          <template v-if="seccion.nombre && seccion.nombre !== ruta.meta.titulo">
+            <span>{{ seccion.nombre }}</span>
+            <Icono nombre="chevron_der" :tam="12" />
+          </template>
+          <strong>{{ ruta.meta.titulo }}</strong>
+        </nav>
 
         <div class="crecer"></div>
 
-        <div class="fecha-actual">{{ fechaHoy }}</div>
-
-        <CampanaAlertas />
-
-        <button class="btn-tema" @click="tema.alternar()" :title="tema.oscuro ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'">
-          <transition name="girar-icono" mode="out-in">
-            <svg v-if="tema.oscuro" key="sol" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <circle cx="12" cy="12" r="4.5"/>
-              <line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/>
-              <line x1="4.2" y1="4.2" x2="6" y2="6"/><line x1="18" y1="18" x2="19.8" y2="19.8"/>
-              <line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/>
-              <line x1="4.2" y1="19.8" x2="6" y2="18"/><line x1="18" y1="6" x2="19.8" y2="4.2"/>
-            </svg>
-            <svg v-else key="luna" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
-            </svg>
+        <div class="usuario" ref="menuRef">
+          <button class="usuario-boton" @click="menuAbierto = !menuAbierto" :aria-expanded="menuAbierto">
+            <span class="avatar">{{ auth.iniciales }}</span>
+            <span class="usuario-texto">
+              <strong>{{ auth.usuario?.nombre }}</strong>
+              <span>{{ auth.nombreRol }}</span>
+            </span>
+            <Icono nombre="chevron_abajo" :tam="14" />
+          </button>
+          <transition name="menu">
+            <div v-if="menuAbierto" class="menu">
+              <div class="menu-cabecera">
+                <strong>{{ auth.usuario?.nombre }}</strong>
+                <span>{{ auth.nombreRol }} · {{ auth.usuario?.usuario }}</span>
+              </div>
+              <button @click="tema.alternar(); menuAbierto = false"><Icono :nombre="tema.oscuro ? 'sol' : 'luna'" :tam="15" />{{ tema.oscuro ? 'Pantalla clara' : 'Pantalla oscura' }}</button>
+              <button @click="abrirClave"><Icono nombre="llave" :tam="15" />Cambiar contraseña</button>
+              <button @click="confirmarSalida = true; menuAbierto = false"><Icono nombre="salir" :tam="15" />Cerrar sesión</button>
+            </div>
           </transition>
-        </button>
+        </div>
       </header>
 
-      <main class="contenido">
-        <router-view v-slot="{ Component }">
+      <main id="contenido" class="contenido">
+        <nav v-if="pestanas.length > 1" class="pestanas no-imprimir" :aria-label="seccion.nombre">
+          <router-link v-for="p in pestanas" :key="p.name" :to="{ name: p.name }" class="pestana"
+                       :class="{ activa: ruta.name === p.name }" :aria-current="ruta.name === p.name ? 'page' : null">
+            {{ p.meta.pestana }}
+            <span v-if="cuentaPestana(p.name)" class="cuenta-pestana">{{ cuentaPestana(p.name) }}</span>
+          </router-link>
+        </nav>
+        <router-view v-slot="{ Component, route: r }">
           <transition name="vista" mode="out-in">
-            <component :is="Component" />
+            <component :is="Component" :key="r.path" />
           </transition>
         </router-view>
       </main>
     </div>
 
-    <!-- ══ CONFIRMAR SALIDA ═══════════════════════ -->
+    <!-- Hojas oficiales que se están imprimiendo (solo visibles en papel) -->
+    <div v-if="impresion.lote.length" class="area-impresion">
+      <BoletaImpresa v-for="b in impresion.lote" :key="b.id" :datos="b" />
+    </div>
+
     <Modal v-model="confirmarSalida" titulo="Cerrar sesión" ancho="380px">
-      <p class="texto-confirmar">¿Está seguro que desea cerrar la sesión actual?</p>
+      <p class="suave">Se cerrará la sesión en este equipo. Los datos guardados no se pierden.</p>
       <template #acciones>
         <button class="btn btn-secundario" @click="confirmarSalida = false">Cancelar</button>
         <button class="btn btn-primario" @click="salir">Cerrar sesión</button>
+      </template>
+    </Modal>
+
+    <Modal v-model="modalClave" titulo="Cambiar contraseña" ancho="420px">
+      <form @submit.prevent="cambiarClave" id="form-clave">
+        <div class="campo">
+          <label for="c-actual">Contraseña actual</label>
+          <input id="c-actual" v-model="clave.actual" type="password" class="control" autocomplete="current-password" />
+        </div>
+        <div class="campo">
+          <label for="c-nueva">Nueva contraseña</label>
+          <input id="c-nueva" v-model="clave.nueva" type="password" class="control" autocomplete="new-password" />
+          <span class="ayuda">Mínimo 8 caracteres.</span>
+        </div>
+        <div class="campo">
+          <label for="c-rep">Repita la nueva contraseña</label>
+          <input id="c-rep" v-model="clave.repetir" type="password" class="control" autocomplete="new-password" />
+        </div>
+      </form>
+      <template #acciones>
+        <button class="btn btn-secundario" @click="modalClave = false">Cancelar</button>
+        <button class="btn btn-primario" type="submit" form="form-clave" :disabled="guardandoClave">Guardar</button>
       </template>
     </Modal>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useTemaStore } from '../stores/tema';
 import { useAlertasStore } from '../stores/alertas';
+import { useCatalogosStore } from '../stores/catalogos';
+import { useNotificacionesStore } from '../stores/notificaciones';
+import { usuarios, mensajeError } from '../services/api';
+import { SECCIONES, paginasVisibles } from '../router';
 import Modal from './Modal.vue';
-import CampanaAlertas from './CampanaAlertas.vue';
+import BoletaImpresa from './BoletaImpresa.vue';
+import { useImpresionStore } from '../stores/impresion';
+import Icono from './Icono.vue';
 
-const router  = useRouter();
-const auth    = useAuthStore();
-const tema    = useTemaStore();
+const router = useRouter();
+const ruta = useRoute();
+const auth = useAuthStore();
+const tema = useTemaStore();
 const alertas = useAlertasStore();
+const catalogos = useCatalogosStore();
+const notif = useNotificacionesStore();
+const impresion = useImpresionStore();
 
-const lateralAbierto  = ref(false);
+const lateralAbierto = ref(false);
+const menuAbierto = ref(false);
+const menuRef = ref(null);
 const confirmarSalida = ref(false);
+const modalClave = ref(false);
+const guardandoClave = ref(false);
+const clave = reactive({ actual: '', nueva: '', repetir: '' });
 
-const fechaHoy = computed(() => {
-  const d = new Date();
-  const dias  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
-  const meses = ['enero','febrero','marzo','abril','mayo','junio',
-                 'julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  return `${dias[d.getDay()]}, ${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
+const primerNombre = computed(() => (auth.usuario?.nombre || '').split(' ')[0]);
+const puedeRegistrar = computed(() => !!auth.usuario && auth.puedeEditar);
+const seccion = computed(() => SECCIONES[ruta.meta.seccion] || {});
+
+// Menú: una entrada por sección, agrupadas; lleva a la primera página que el rol puede abrir
+const grupos = computed(() => {
+  const rol = auth.usuario?.rol;
+  const insignias = {
+    boletas: impresion.cuentas.por_completar ? { n: impresion.cuentas.por_completar, ayuda: 'boletas por completar' } : null,
+    existencias: auth.esAdministrador && alertas.datos.resumen.total ? { n: alertas.datos.resumen.total, ayuda: 'alertas de inventario' } : null
+  };
+  const lista = [];
+  for (const [clave, s] of Object.entries(SECCIONES)) {
+    const destino = clave === 'inicio' ? '/inicio' : paginasVisibles(clave, rol)[0];
+    if (!destino) continue;
+    const grupo = s.grupo || clave;
+    let g = lista.find(x => x.clave === grupo);
+    if (!g) lista.push(g = { clave: grupo, nombre: s.grupo || '', enlaces: [] });
+    g.enlaces.push({
+      clave, nombre: s.nombre, icono: s.icono,
+      to: typeof destino === 'string' ? destino : { name: destino.name },
+      insignia: insignias[clave]?.n, ayudaInsignia: insignias[clave] && `${insignias[clave].n} ${insignias[clave].ayuda}`
+    });
+  }
+  return lista;
+});
+
+const cuentaPestana = (nombre) => ({ revision: impresion.cuentas.por_firmar, imprimir: impresion.cuentas.por_imprimir })[nombre] || 0;
+
+// Pestañas: solo en las páginas que forman la sección, no en formularios ni detalles
+const pestanas = computed(() => {
+  const paginas = paginasVisibles(ruta.meta.seccion, auth.usuario?.rol);
+  return paginas.some(p => p.name === ruta.name) ? paginas : [];
 });
 
 const salir = () => {
@@ -184,181 +202,241 @@ const salir = () => {
   router.push('/login');
 };
 
+const abrirClave = () => {
+  Object.assign(clave, { actual: '', nueva: '', repetir: '' });
+  menuAbierto.value = false;
+  modalClave.value = true;
+};
+
+const cambiarClave = async () => {
+  if (clave.nueva !== clave.repetir) return notif.alerta('Las contraseñas nuevas no coinciden');
+  guardandoClave.value = true;
+  try {
+    const { data } = await usuarios.cambiarClave({ actual: clave.actual, nueva: clave.nueva });
+    notif.exito(data.mensaje);
+    modalClave.value = false;
+  } catch (e) {
+    notif.error(mensajeError(e));
+  } finally {
+    guardandoClave.value = false;
+  }
+};
+
+// Atajo N: nueva boleta (fuera de campos de texto)
+const teclado = (e) => {
+  if (!puedeRegistrar.value || e.key.toLowerCase() !== 'n' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+  if (document.querySelector('.modal-velo')) return;
+  router.push('/boleta/nueva');
+};
+
+const clicFuera = (e) => {
+  if (menuRef.value && !menuRef.value.contains(e.target)) menuAbierto.value = false;
+};
+
 onMounted(() => {
   alertas.cargar();
+  impresion.contarPendientes();
+  catalogos.cargar().catch(() => notif.error('No se pudieron cargar los catálogos'));
+  document.addEventListener('keydown', teclado);
+  document.addEventListener('click', clicFuera);
 });
+onUnmounted(() => {
+  document.removeEventListener('keydown', teclado);
+  document.removeEventListener('click', clicFuera);
+});
+
+watch(() => ruta.fullPath, () => { lateralAbierto.value = false; impresion.contarPendientes(); });
 </script>
 
 <style scoped>
-.disposicion { display: flex; min-height: 100vh; }
-
-/* ── BARRA LATERAL ─────────────────────────────── */
-.barra-lateral {
-  width: 258px; flex-shrink: 0;
-  background: var(--lateral);
-  display: flex; flex-direction: column;
-  position: sticky; top: 0; height: 100vh;
-  z-index: 60;
+.marco {
+  --ancho-lateral: 272px;
+  display: grid;
+  grid-template-columns: var(--ancho-lateral) 1fr;
+  min-height: 100vh;
 }
 
-.marca {
-  display: flex; align-items: center; gap: 11px;
-  padding: 20px 18px;
-  border-bottom: 1px solid rgba(255,255,255,.08);
+.saltar {
+  position: absolute; left: -9999px; top: 8px; z-index: 9999;
+  padding: 8px 12px; background: var(--texto); color: var(--superficie); border-radius: var(--radio);
 }
-.marca-logo { width: 38px; height: 38px; object-fit: contain; flex-shrink: 0; }
-.marca-texto { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
-.marca-texto strong { color: #fff; font-size: 14px; font-weight: 600; }
-.marca-texto span  { color: var(--lateral-texto); font-size: 11.5px; }
+.saltar:focus { left: 8px; }
 
-.navegacion { flex: 1; overflow-y: auto; padding: 14px 12px; }
-.grupo-titulo {
-  padding: 14px 10px 7px;
-  font-size: 10.5px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .08em;
-  color: rgba(255,255,255,.35);
+/* ── Lateral ─────────────────────────────── */
+.lateral {
+  position: sticky; top: 0;
+  height: 100vh;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 20px 16px;
+  background: var(--superficie);
+  border-right: 1px solid var(--borde);
+  overflow-y: auto;
 }
-.grupo-titulo:first-child { padding-top: 4px; }
+
+.marca { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 6px 14px; text-decoration: none; color: inherit; }
+.marca img { width: 34px; height: 34px; object-fit: contain; }
+.marca strong { display: block; font-size: 13.5px; font-weight: 700; color: var(--texto); line-height: 1.2; }
+.marca span { display: block; font-size: 12px; color: var(--texto-tenue); line-height: 1.3; }
+
+.saludo { display: flex; align-items: center; gap: 12px; padding: 4px 6px 16px; flex-shrink: 0; }
+.avatar-grande { width: 48px !important; height: 48px !important; font-size: 16px !important; background: var(--acento-tenue) !important; color: var(--acento-texto) !important; }
+.saludo div span { display: block; font-size: 14px; color: var(--texto-suave); line-height: 1.3; }
+.saludo strong { display: block; font-size: 17px; font-weight: 600; color: var(--texto); }
+
+.navegacion { flex: 1; }
+.navegacion section + section { margin-top: 10px; }
+.grupo { padding: 4px 14px; font-size: 12px; color: var(--texto-tenue); }
 
 .enlace {
-  display: flex; align-items: center; gap: 11px;
-  padding: 10px 12px; margin-bottom: 2px;
-  color: var(--lateral-texto);
+  display: flex; align-items: center; gap: 12px;
+  height: 44px; padding: 0 14px; margin-bottom: 2px;
+  border-radius: 12px;
+  color: var(--texto); font-size: 14.5px;
   text-decoration: none;
-  font-size: 13.5px; font-weight: 450;
-  border-radius: var(--radio);
-  transition: all var(--transicion);
+  transition: background var(--transicion), color var(--transicion);
 }
-.enlace:hover { background: rgba(255,255,255,.06); color: #fff; }
-.enlace svg { flex-shrink: 0; opacity: .85; }
-.enlace span:first-of-type { flex: 1; }
-
-.enlace.router-link-active {
-  background: var(--lateral-activo);
-  color: #fff; font-weight: 500;
-  box-shadow: inset 3px 0 0 var(--rojo-claro);
-}
-.enlace.router-link-active svg { opacity: 1; color: var(--rojo-claro); }
+.enlace svg { color: var(--texto-suave); }
+.enlace:hover { background: var(--superficie-alt); }
+.enlace.activo { background: var(--acento-tenue); color: var(--acento-texto); font-weight: 600; }
+.enlace.activo svg { color: var(--acento-texto); }
 
 .insignia {
-  min-width: 19px; height: 19px;
-  display: flex; align-items: center; justify-content: center;
-  padding: 0 6px;
-  background: var(--rojo-bomberos); color: #fff;
-  font-size: 10.5px; font-weight: 700;
-  border-radius: 99px;
+  margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 600; color: #fff; background: var(--acento); border-radius: 999px;
 }
 
-.pie-lateral {
-  padding: 14px 12px;
-  border-top: 1px solid rgba(255,255,255,.08);
+/* La boleta nace al registrar la llamada: es la acción principal del sistema */
+.accion-registrar {
+  flex-shrink: 0; margin: 0 0 14px; height: 46px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--acento); color: #fff; border-radius: 12px;
+  font-size: 15px; font-weight: 600; text-decoration: none;
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--acento) 80%, transparent);
 }
+.accion-registrar:hover { background: var(--acento-oscuro); }
 
-.tarjeta-usuario {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px;
-  background: rgba(255,255,255,.05);
-  border-radius: var(--radio);
-  margin-bottom: 8px;
-}
-.avatar {
-  width: 34px; height: 34px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--rojo-bomberos); color: #fff;
-  font-size: 12px; font-weight: 700;
-  border-radius: 50%;
-}
-.usuario-datos { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; }
-.usuario-datos strong {
-  color: #fff; font-size: 12.5px; font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.usuario-datos span { color: var(--lateral-texto); font-size: 11px; }
-
-.btn-salir {
-  width: 100%;
-  display: flex; align-items: center; gap: 9px;
-  padding: 9px 12px;
-  background: transparent; border: none;
-  color: var(--lateral-texto);
-  font: inherit; font-size: 13px;
-  border-radius: var(--radio);
-  cursor: pointer;
-  transition: all var(--transicion);
-}
-.btn-salir:hover { background: rgba(198,40,40,.18); color: var(--rojo-claro); }
-
-.velo-lateral { display: none; }
-
-/* ── ZONA PRINCIPAL ────────────────────────────── */
-.zona-principal { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+/* ── Encabezado ──────────────────────────── */
+.principal { min-width: 0; display: flex; flex-direction: column; }
 
 .encabezado {
-  height: 60px; flex-shrink: 0;
-  display: flex; align-items: center; gap: 12px;
-  padding: 0 24px;
-  background: var(--superficie);
-  border-bottom: 1px solid var(--borde);
-  position: sticky; top: 0; z-index: 40;
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: 6px;
+  height: 60px; padding: 0 24px 0 32px;
+  background: color-mix(in srgb, var(--fondo) 92%, transparent);
+  backdrop-filter: blur(8px);
 }
 
-.btn-menu {
-  display: none;
-  padding: 8px; background: none; border: none;
-  color: var(--texto-suave); border-radius: var(--radio); cursor: pointer;
+.migas { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 500; color: var(--texto-tenue); min-width: 0; }
+.migas strong { color: var(--texto); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+
+.usuario { position: relative; margin-left: 4px; }
+.usuario-boton {
+  display: flex; align-items: center; gap: 9px;
+  height: 38px; padding: 0 8px 0 4px;
+  background: none; border: 1px solid transparent; border-radius: var(--radio);
+  font: inherit; color: var(--texto-suave); cursor: pointer;
 }
-.btn-menu:hover { background: var(--superficie-alt); }
-
-.fecha-actual { font-size: 12.5px; color: var(--texto-suave); }
-.fecha-actual::first-letter { text-transform: uppercase; }
-
-.btn-tema {
-  width: 36px; height: 36px;
+.usuario-boton:hover { background: var(--superficie); border-color: var(--borde); }
+.avatar {
+  width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--superficie-alt);
+  background: var(--texto); color: var(--superficie);
+  font-size: 11.5px; font-weight: 600;
+  border-radius: 50%;
+}
+.usuario-texto { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
+.usuario-texto strong { font-size: 13.5px; color: var(--texto); font-weight: 650; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usuario-texto span { font-size: 12px; color: var(--texto-tenue); }
+
+.menu {
+  position: absolute; right: 0; top: calc(100% + 6px);
+  width: 250px; padding: 4px;
+  background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio);
-  color: var(--texto-suave);
-  cursor: pointer;
-  transition: all var(--transicion);
+  border-radius: var(--radio-lg);
+  box-shadow: var(--sombra-md);
 }
-.btn-tema:hover {
-  color: var(--rojo-bomberos);
-  border-color: var(--rojo-bomberos);
-  background: var(--peligro-fondo);
+.menu-cabecera { padding: 9px 10px 10px; border-bottom: 1px solid var(--borde); margin-bottom: 4px; }
+.menu-cabecera strong { display: block; font-size: 13px; }
+.menu-cabecera span { font-size: 12px; color: var(--texto-tenue); }
+.menu button {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  height: 38px; padding: 0 10px;
+  background: none; border: none; border-radius: var(--radio-sm);
+  font: inherit; font-size: 14px; color: var(--texto-suave); cursor: pointer; text-align: left;
+}
+.menu button:hover { background: var(--superficie-alt); color: var(--texto); }
+.menu-enter-active, .menu-leave-active { transition: opacity 120ms ease, transform 120ms ease; }
+.menu-enter-from, .menu-leave-to { opacity: 0; transform: translateY(-4px); }
+
+.contenido { flex: 1; padding: 28px 32px 64px; max-width: 1440px; width: 100%; margin: 0 auto; }
+
+/* ── Pestañas de la sección ──────────────── */
+.pestanas {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  margin: -8px 0 22px;
+  border-bottom: 1px solid var(--borde);
+}
+.pestana {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 14px;
+  font-size: 14.5px; font-weight: 500;
+  color: var(--texto-suave); text-decoration: none;
+  border-radius: var(--radio) var(--radio) 0 0;
+  transition: color var(--transicion), background var(--transicion);
+}
+.pestana:hover { color: var(--texto); background: var(--superficie-alt); }
+.pestana.activa { color: var(--texto); font-weight: 600; }
+.pestana.activa::after {
+  content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px;
+  height: 3px; border-radius: 3px 3px 0 0; background: var(--acento);
+}
+.cuenta-pestana {
+  min-width: 24px; height: 22px; padding: 0 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12.5px; font-weight: 700;
+  color: var(--texto-suave); background: var(--superficie-hundida);
+  border-radius: 999px;
 }
 
-.contenido { flex: 1; padding: 26px; }
+.vista-enter-active, .vista-leave-active { transition: opacity 120ms ease; }
+.vista-enter-from, .vista-leave-to { opacity: 0; }
 
-.texto-confirmar { color: var(--texto-suave); font-size: 14px; }
+.velo, .solo-movil { display: none; }
 
-/* ── TRANSICIONES ──────────────────────────────── */
-.vista-enter-active { transition: all 200ms ease; }
-.vista-leave-active { transition: all 140ms ease; }
-.vista-enter-from { opacity: 0; transform: translateY(8px); }
-.vista-leave-to   { opacity: 0; }
+@media (max-width: 1100px) {
+  .usuario-texto { display: none; }
+}
 
-.girar-icono-enter-active,
-.girar-icono-leave-active { transition: all 220ms cubic-bezier(.4,0,.2,1); }
-.girar-icono-enter-from { opacity: 0; transform: rotate(-90deg) scale(.6); }
-.girar-icono-leave-to   { opacity: 0; transform: rotate(90deg) scale(.6); }
-
-/* ── RESPONSIVO ────────────────────────────────── */
-@media (max-width: 1000px) {
-  .barra-lateral {
-    position: fixed; left: 0; top: 0;
+@media (max-width: 960px) {
+  .marco { grid-template-columns: 1fr; }
+  .lateral {
+    position: fixed; left: 0; top: 0; z-index: 200;
+    width: 272px;
     transform: translateX(-100%);
-    transition: transform 240ms cubic-bezier(.4,0,.2,1);
+    transition: transform 200ms cubic-bezier(.3,0,.2,1);
     box-shadow: var(--sombra-lg);
   }
-  .disposicion:not(.lateral-oculto) .barra-lateral { transform: translateX(0); }
-  .disposicion:not(.lateral-oculto) .velo-lateral {
-    display: block; position: fixed; inset: 0;
-    background: rgba(0,0,0,.5); z-index: 50;
-    animation: aparecer 200ms ease;
-  }
-  .btn-menu { display: flex; }
-  .contenido { padding: 18px 16px; }
-  .fecha-actual { display: none; }
+  .lateral-abierto .lateral { transform: none; }
+  .lateral-abierto .velo { display: block; position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.4); }
+  .solo-movil { display: inline-flex; }
+  .encabezado { padding: 0 12px; }
+  .contenido { padding: 20px 16px 48px; }
+  .migas > span, .migas > svg { display: none; }
+}
+
+.area-impresion { display: none; }
+
+@media print {
+  .imprimiendo .lateral, .imprimiendo .principal, .imprimiendo .velo { display: none !important; }
+  .area-impresion { display: block; }
+  .area-impresion :deep(.hoja-oficio) { break-after: page; page-break-after: always; }
+  .area-impresion :deep(.hoja-oficio:last-child) { break-after: auto; page-break-after: auto; }
+  .marco { display: block; }
+  .contenido { padding: 0; max-width: none; }
 }
 </style>

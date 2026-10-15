@@ -3,14 +3,14 @@
     <span class="bol-et">Control.</span>
     <input v-model="d.numero_control" class="bol-linea w-lg" type="text" />
     <span class="bol-et">Minutos trabajados:</span>
-    <input v-model.number="d.minutos_trabajados" class="bol-linea" type="number" min="0" />
+    <input v-model="d.minutos_trabajados" class="bol-linea" type="text" />
   </div>
 
   <div class="bol-fila">
     <span class="bol-et">Solicitud por teléfono:</span>
     <input v-model="d.solicitud_por_telefono" class="bol-linea w-md" type="text" />
     <span class="bol-et">Personal:</span>
-    <input v-model="d.personal" class="bol-linea w-md" type="text" />
+    <input v-model="d.personal" class="bol-linea w-md" list="dl-personal" type="text" />
     <span class="bol-et">Fecha:</span>
     <input v-model="d.fecha" class="bol-linea w-md" type="date" />
   </div>
@@ -30,7 +30,7 @@
     <span class="bol-et">Dirección:</span>
     <input v-model="d.direccion" class="bol-linea" type="text" />
     <span class="bol-et">Zona:</span>
-    <input v-model="d.zona" class="bol-linea w-md" type="text" />
+    <input v-model="d.zona" class="bol-linea w-md" list="dl-sectores" type="text" />
   </div>
 
   <div class="bol-fila">
@@ -50,9 +50,11 @@
 
   <div class="bol-fila">
     <span class="bol-et">Si</span>
-    <input v-model="siNo.si" class="bol-linea w-sm" type="text" />
+    <input :value="d.hubo_fallecidos ? 'X' : ''" class="bol-linea w-sm marca-x" type="text" readonly
+           @click="d.hubo_fallecidos = true" @keydown.space.prevent="d.hubo_fallecidos = true" aria-label="Hubo fallecidos: sí" />
     <span class="bol-et">No</span>
-    <input v-model="siNo.no" class="bol-linea w-sm" type="text" />
+    <input :value="d.hubo_fallecidos ? '' : 'X'" class="bol-linea w-sm marca-x" type="text" readonly
+           @click="d.hubo_fallecidos = false" @keydown.space.prevent="d.hubo_fallecidos = false" aria-label="Hubo fallecidos: no" />
     <span class="bol-et">Edad (es):</span>
     <input v-model="d.edades" class="bol-linea" type="text" />
   </div>
@@ -94,14 +96,14 @@
     <span class="bol-et">Otros:</span>
     <input v-model="d.otro_traslado" class="bol-linea w-lg" type="text" />
     <span class="bol-et">Radiotelefonista:</span>
-    <input v-model="d.radiotelefonista" class="bol-linea" type="text" />
+    <input v-model="d.radiotelefonista" class="bol-linea" list="dl-personal" type="text" />
   </div>
 
   <div class="bol-fila">
     <span class="bol-et">Piloto (S):</span>
-    <input v-model="d.piloto" class="bol-linea" type="text" />
+    <input v-model="d.piloto" class="bol-linea" list="dl-personal" type="text" />
     <span class="bol-et">Unidad (es)</span>
-    <input v-model="d.unidad" class="bol-linea w-md" type="text" />
+    <input v-model="d.unidad" class="bol-linea w-md" list="dl-unidades" type="text" />
   </div>
 
   <div class="bol-fila">
@@ -111,7 +113,9 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue';
 const d = defineModel({ required: true });
-const siNo = reactive({ si: '', no: '' });
 </script>
+
+<style scoped>
+.marca-x { cursor: pointer; text-align: center; font-weight: 700; }
+</style>

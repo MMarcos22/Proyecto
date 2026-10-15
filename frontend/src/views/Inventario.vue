@@ -1,587 +1,294 @@
 <template>
   <div class="animar">
-    <div class="titulo-seccion fila-entre">
+    <div class="titulo-seccion">
       <div>
-        <h1>Existencias de inventario</h1>
-        <p class="sub">Control de insumos disponibles en la bodega de la compañía</p>
+        <h1>Existencias</h1>
       </div>
-      <div v-if="auth.esOperativo" class="fila">
-        <button class="btn btn-secundario" @click="abrirInsumo()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          <span>Nuevo insumo</span>
-        </button>
-        <button class="btn btn-exito" @click="abrirEntrada">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <span>Registrar entrada</span>
-        </button>
-        <button class="btn btn-primario" @click="abrirSalida">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          <span>Registrar salida</span>
-        </button>
+      <div class="acciones">
+        <button v-if="auth.esAdministrador" class="btn btn-plano" @click="abrirInsumo()"><Icono nombre="mas" :tam="15" />Insumo</button>
+        <template v-if="auth.esAdministrador">
+          <button class="btn btn-secundario" @click="abrirDocumento('vale')"><Icono nombre="salida" :tam="15" />Vale de entrega</button>
+          <button class="btn btn-primario" @click="abrirDocumento('entrada')"><Icono nombre="entrada" :tam="15" />Entrada</button>
+        </template>
       </div>
     </div>
 
-    <div v-if="totalAlertas" class="aviso-alertas">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-      </svg>
-      <span>
-        <strong>{{ alertas.existencia_critica.length }}</strong> insumos con existencia crítica
-        <template v-if="alertas.proximos_a_vencer.length">
-          y <strong>{{ alertas.proximos_a_vencer.length }}</strong> próximos a vencer
-        </template>
-      </span>
-    </div>
+    <section class="indicadores mb" aria-label="Estado del inventario">
+      <button v-for="r in resumen" :key="r.clave" class="indicador indicador-filtro"
+              :class="[r.clase, { elegido: r.filtro && estado === r.filtro }]"
+              @click="r.to ? $router.push(r.to) : (estado = estado === r.filtro ? '' : r.filtro)">
+        <span class="rotulo">{{ r.nombre }}</span>
+        <div class="valor">{{ r.valor }}</div>
+        <div class="pie">{{ r.pie }}</div>
+      </button>
+    </section>
 
     <div class="barra-filtros">
-      <div class="pestanas">
-        <button v-for="c in categorias" :key="c.valor"
-                class="pestana" :class="{ activa: filtros.categoria === c.valor }"
-                @click="filtros.categoria = c.valor; cargar()">
-          {{ c.nombre }}
+      <div class="busqueda">
+        <Icono nombre="buscar" :tam="15" />
+        <input v-model="busqueda" class="control" type="search" placeholder="Buscar insumo" aria-label="Buscar insumo" />
+      </div>
+      <div class="segmentos" role="group" aria-label="Categoría">
+        <button :class="{ activo: !categoria }" @click="categoria = ''">Todas <span class="cuenta">{{ todos.length }}</span></button>
+        <button v-for="c in catalogos.categorias" :key="c.valor" :class="{ activo: categoria === c.valor }" @click="categoria = c.valor">
+          {{ c.nombre }} <span class="cuenta">{{ todos.filter(i => i.categoria === c.valor).length }}</span>
         </button>
       </div>
-      <div class="fila">
-        <input v-model="busqueda" class="control control-busqueda" type="text"
-               placeholder="Buscar insumo" />
-        <select v-model="filtros.estado" class="control control-estado" @change="cargar">
-          <option value="">Todos los estados</option>
-          <option value="normal">Normal</option>
-          <option value="bajo">Existencia baja</option>
-          <option value="agotado">Agotado</option>
-        </select>
-      </div>
+      <button v-if="estado" class="btn btn-plano btn-sm" @click="estado = ''"><Icono nombre="cerrar" :tam="14" />Quitar filtro «{{ textoEstado(estado) }}»</button>
     </div>
 
-    <div v-if="cargando" class="tarjeta estado-carga">
-      <span class="cargador cargador-oscuro"></span>
-      <p>Cargando existencias</p>
-    </div>
-
-    <div v-else-if="!insumosFiltrados.length" class="tarjeta">
-      <div class="vacio"><p>No hay insumos que coincidan con el filtro</p></div>
-    </div>
-
-    <div v-else class="tabla-contenedor">
+    <div class="tabla-contenedor">
       <table>
         <thead>
           <tr>
-            <th>Insumo</th><th>Categoría</th><th>Unidad</th>
-            <th>Existencia</th><th>Mínimo</th><th>Estado</th>
-            <th v-if="auth.esOperativo" style="width:92px">Acciones</th>
+            <th>Insumo</th>
+            <th v-if="!categoria">Categoría</th>
+            <th class="num">Existencia</th>
+            <th class="num">Mínimo</th>
+            <th>Próx. vencimiento</th>
+            <th class="num" title="Consumo real (servicios y uso interno) en los últimos 90 días">Consumo 90 d</th>
+            <th>Estado</th>
+            <th v-if="auth.esAdministrador" style="width:40px"></th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="i in insumosFiltrados" :key="i.id">
-            <td>{{ i.nombre }}</td>
-            <td class="capitalizar">{{ i.categoria }}</td>
-            <td>{{ i.unidad_medida || '—' }}</td>
-            <td><strong>{{ i.stock_actual }}</strong></td>
-            <td>{{ i.stock_minimo }}</td>
-            <td><span class="etiqueta" :class="claseEstado(i.estado)">{{ textoEstado(i.estado) }}</span></td>
-            <td v-if="auth.esOperativo">
-              <div class="acciones-fila">
-                <button class="btn-accion" title="Editar" @click="abrirInsumo(i)">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                    <path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                  </svg>
-                </button>
-                <button class="btn-accion btn-accion-peligro" title="Eliminar" @click="confirmarEliminar(i)">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 6 5 6 21 6"/>
-                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                    <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
-                  </svg>
-                </button>
-              </div>
+          <template v-if="cargando && !todos.length">
+            <tr v-for="i in 8" :key="i"><td :colspan="8"><div class="esqueleto" style="height:14px"></div></td></tr>
+          </template>
+          <tr v-for="i in paginados" :key="i.id" class="fila-clic" tabindex="0"
+              @click="$router.push(`/inventario/${i.id}`)" @keydown.enter="$router.push(`/inventario/${i.id}`)">
+            <td>
+              <span class="celda-principal">{{ i.nombre }}</span>
+              <span class="celda-sec">{{ i.clase === 'equipo' ? 'Equipo · ' : '' }}{{ i.unidad_medida || 'unidad' }}{{ i.presentacion && i.factor_presentacion > 1 ? ` · ${i.presentacion} de ${i.factor_presentacion}` : '' }}{{ i.lotes_vigentes ? ` · ${plural(i.lotes_vigentes, 'lote', 'lotes')}` : '' }}</span>
+            </td>
+            <td v-if="!categoria" class="suave">{{ catalogos.nombreCategoria(i.categoria) }}</td>
+            <td class="num"><strong>{{ i.stock_actual }}</strong></td>
+            <td class="num tenue">{{ i.stock_minimo }}</td>
+            <td class="mono venc" :class="claseVenc(i)">
+              <template v-if="i.proximo_vencimiento">{{ fecha(i.proximo_vencimiento) }}<span class="celda-sec">{{ textoDias(i.proximo_vencimiento) }}</span></template>
+              <span v-else class="tenue">—</span>
+            </td>
+            <td class="num">{{ i.consumo_90 || '—' }}</td>
+            <td>
+              <span v-if="i.estado !== 'normal'" class="etiqueta" :class="claseEstado(i.estado)">{{ textoEstado(i.estado) }}</span>
+              <span v-if="i.cantidad_vencida" class="etiqueta et-peligro" style="margin-left:4px" :title="`${i.cantidad_vencida} en lotes vencidos`">{{ i.cantidad_vencida }} vencidos</span>
+            </td>
+            <td v-if="auth.esAdministrador" @click.stop>
+              <button class="btn btn-plano btn-sm btn-icono" @click="abrirInsumo(i)" :aria-label="`Editar ${i.nombre}`"><Icono nombre="editar" :tam="14" /></button>
             </td>
           </tr>
         </tbody>
       </table>
+      <div v-if="!cargando && !filtrados.length" class="vacio">
+        <Icono nombre="caja" :tam="28" />
+        <strong>Ningún insumo coincide</strong>
+      </div>
+      <Paginador v-model:pagina="pagina" :total="filtrados.length" :tamano="POR_PAGINA" class="no-imprimir" />
     </div>
 
-    <!-- ══ MODAL NUEVO / EDITAR INSUMO ════════ -->
-    <Modal v-model="modalInsumo" :titulo="insumo.id ? 'Editar insumo' : 'Nuevo insumo'">
-      <div class="campo">
-        <label>Nombre del insumo <span class="req">*</span></label>
-        <input v-model="insumo.nombre" class="control" type="text" />
-      </div>
+    <DocumentoModal v-model="modalMov" :tipo="tipoMov" @guardado="cargar" />
 
-      <div class="rejilla rejilla-2">
-        <div class="campo">
-          <label>Categoría <span class="req">*</span></label>
-          <select v-model="insumo.categoria" class="control">
-            <option value="">Seleccione</option>
-            <option value="prehospitalario">Pre-hospitalario</option>
-            <option value="cafeteria">Cafetería</option>
-            <option value="libreria">Librería</option>
-            <option value="limpieza">Limpieza</option>
-          </select>
-        </div>
-        <div class="campo">
-          <label>Unidad de medida</label>
-          <input v-model="insumo.unidad_medida" class="control" type="text"
-                 placeholder="Ej. caja, unidad, galón" />
-        </div>
-      </div>
-
-      <div class="campo">
-        <label>Existencia mínima</label>
-        <input v-model.number="insumo.stock_minimo" class="control" type="number" min="0" />
-        <span class="ayuda">Cantidad bajo la cual el sistema generará una alerta</span>
-      </div>
-
-      <template #acciones>
-        <button class="btn btn-secundario" @click="modalInsumo = false">Cancelar</button>
-        <button class="btn btn-primario" @click="guardarInsumo" :disabled="procesando">
-          <span v-if="!procesando">{{ insumo.id ? 'Guardar cambios' : 'Agregar insumo' }}</span>
-          <template v-else><span class="cargador"></span><span>Guardando</span></template>
-        </button>
+    <AsistenteModal v-model="modalInsumo" :titulo="insumo.id ? 'Editar insumo' : 'Nuevo insumo'" :pasos="pasosInsumo"
+                    :guardando="procesando" texto-final="Guardar insumo" @finalizar="guardarInsumo">
+      <template #paso-0>
+        <input v-model="insumo.nombre" class="control" placeholder="Ej.: Venda elástica 4 pulgadas" aria-label="Nombre del insumo" autofocus />
+        <button v-if="insumo.id" type="button" class="btn btn-plano btn-sm mt" style="color:var(--peligro)" @click="retirarInsumo">Retirar este insumo del catálogo</button>
       </template>
-    </Modal>
-
-    <!-- ══ MODAL ELIMINAR ═════════════════════ -->
-    <Modal v-model="modalEliminar" titulo="Eliminar insumo" ancho="420px">
-      <p class="texto-eliminar">
-        ¿Está seguro que desea eliminar <strong>{{ insumoEliminar?.nombre }}</strong>?
-      </p>
-      <p class="nota-eliminar">
-        Si el insumo tiene movimientos registrados se desactivará en lugar de eliminarse,
-        para conservar el historial de la institución.
-      </p>
-      <template #acciones>
-        <button class="btn btn-secundario" @click="modalEliminar = false">Cancelar</button>
-        <button class="btn btn-peligro" @click="eliminarInsumo" :disabled="procesando">
-          <span v-if="!procesando">Eliminar</span>
-          <template v-else><span class="cargador"></span><span>Eliminando</span></template>
-        </button>
-      </template>
-    </Modal>
-
-    <!-- ══ MODAL ENTRADA ══════════════════════ -->
-    <Modal v-model="modalEntrada" titulo="Registrar entrada de insumos">
-      <div class="campo">
-        <label>Insumo <span class="req">*</span></label>
-        <select v-model="entrada.insumo_id" class="control">
-          <option value="">Seleccione el insumo</option>
-          <optgroup v-for="c in categorias.slice(1)" :key="c.valor" :label="c.nombre">
-            <option v-for="i in porCategoria(c.valor)" :key="i.id" :value="i.id">
-              {{ i.nombre }} — existencia: {{ i.stock_actual }}
-            </option>
-          </optgroup>
-        </select>
-      </div>
-
-      <div class="rejilla rejilla-2">
-        <div class="campo">
-          <label>Cantidad <span class="req">*</span></label>
-          <input v-model.number="entrada.cantidad" class="control" type="number" min="1" />
+      <template #paso-1>
+        <div class="opciones" style="--min-opcion: 220px">
+          <button v-for="c in catalogos.categorias" :key="c.valor" type="button" class="opcion"
+                  :class="{ elegida: insumo.categoria === c.valor }" @click="insumo.categoria = c.valor">{{ c.nombre }}</button>
         </div>
-        <div class="campo">
-          <label>Número de lote</label>
-          <input v-model="entrada.numero_lote" class="control" type="text" placeholder="Ej. LOTE-2026-001" />
+      </template>
+      <template #paso-2>
+        <span class="rotulo-campo-i">Unidad de medida</span>
+        <input v-model="insumo.unidad_medida" class="control mb" placeholder="Elija o escriba…" aria-label="Unidad de medida" list="dl-unidades-medida" />
+        <datalist id="dl-unidades-medida"><option v-for="u in UNIDADES" :key="u" :value="u" /></datalist>
+        <span class="rotulo-campo-i">Existencia mínima</span>
+        <Contador v-model="insumo.stock_minimo" :min="0" :unidad="insumo.unidad_medida || 'unidades'" etiqueta="Existencia mínima" />
+        <p class="tenue mt">Cuando la existencia baje a este número, el sistema avisará que hay que reponer.</p>
+      </template>
+      <template #paso-3>
+        <span class="rotulo-campo-i">Clase</span>
+        <div class="opciones mb" style="--min-opcion: 200px">
+          <button v-for="(n, v) in catalogos.dominio?.CLASES_INSUMO" :key="v" type="button" class="opcion"
+                  :class="{ elegida: insumo.clase === v }" @click="insumo.clase = v">
+            <span>{{ n }}<small>{{ AYUDA_CLASE[v] }}</small></span>
+          </button>
         </div>
-      </div>
-
-      <div class="campo">
-        <label>Fecha de vencimiento</label>
-        <input v-model="entrada.fecha_vencimiento" class="control" type="date" :min="hoy" />
-        <span class="ayuda">No se admiten fechas anteriores al día de hoy</span>
-      </div>
-
-      <div class="campo">
-        <label>Observaciones</label>
-        <textarea v-model="entrada.observaciones" class="control" rows="2"></textarea>
-      </div>
-
-      <template #acciones>
-        <button class="btn btn-secundario" @click="modalEntrada = false">Cancelar</button>
-        <button class="btn btn-exito" @click="guardarEntrada" :disabled="procesando">
-          <span v-if="!procesando">Registrar entrada</span>
-          <template v-else><span class="cargador"></span><span>Guardando</span></template>
-        </button>
+        <span class="rotulo-campo-i">Presentación de compra <span class="tenue">opcional</span></span>
+        <div class="fila">
+          <input v-model="insumo.presentacion" class="control" placeholder="caja, paquete…" aria-label="Presentación" style="max-width:200px" />
+          <span class="tenue">de</span>
+          <input v-model.number="insumo.factor_presentacion" type="number" min="1" class="control num" style="max-width:100px" aria-label="Unidades por presentación" />
+          <span class="tenue">{{ insumo.unidad_medida || 'unidades' }}</span>
+        </div>
+        <p class="tenue mt">Si llega en cajas de 50 y se usa por unidad, al registrar una entrada podrá escribir «3 cajas» y se guardarán 150.</p>
       </template>
-    </Modal>
-
-    <!-- ══ MODAL SALIDA ═══════════════════════ -->
-    <Modal v-model="modalSalida" titulo="Registrar salida de insumos">
-      <div class="nota-info">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
-        </svg>
-        <span>Toda salida debe vincularse al servicio de emergencia en que se utilizó el insumo.</span>
-      </div>
-
-      <div class="campo">
-        <label>Insumo <span class="req">*</span></label>
-        <select v-model="salida.insumo_id" class="control">
-          <option value="">Seleccione el insumo</option>
-          <optgroup v-for="c in categorias.slice(1)" :key="c.valor" :label="c.nombre">
-            <option v-for="i in porCategoria(c.valor)" :key="i.id" :value="i.id"
-                    :disabled="i.stock_actual === 0">
-              {{ i.nombre }} — disponible: {{ i.stock_actual }}
-            </option>
-          </optgroup>
-        </select>
-      </div>
-
-      <div class="campo">
-        <label>Cantidad <span class="req">*</span></label>
-        <input v-model.number="salida.cantidad" class="control" type="number" min="1" />
-      </div>
-
-      <div class="campo">
-        <label>Servicio de emergencia <span class="req">*</span></label>
-        <select v-model="salida.emergencia_id" class="control">
-          <option value="">Seleccione el servicio</option>
-          <option v-for="s in serviciosVinculo" :key="s.id" :value="s.id">
-            {{ s.numero_control }} · {{ nombreTipo(s.tipo_servicio) }} · {{ formatoFecha(s.fecha) }}
-          </option>
-        </select>
-      </div>
-
-      <div class="campo">
-        <label>Observaciones</label>
-        <textarea v-model="salida.observaciones" class="control" rows="2"></textarea>
-      </div>
-
-      <template #acciones>
-        <button class="btn btn-secundario" @click="modalSalida = false">Cancelar</button>
-        <button class="btn btn-primario" @click="guardarSalida" :disabled="procesando">
-          <span v-if="!procesando">Registrar salida</span>
-          <template v-else><span class="cargador"></span><span>Guardando</span></template>
-        </button>
-      </template>
-    </Modal>
+    </AsistenteModal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
-import { inventario, emergencias } from '../services/api';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { inventario, mensajeError } from '../services/api';
 import { useAuthStore } from '../stores/auth';
 import { useAlertasStore } from '../stores/alertas';
+import { useCatalogosStore } from '../stores/catalogos';
 import { useNotificacionesStore } from '../stores/notificaciones';
-import Modal from '../components/Modal.vue';
+import { fecha, plural, hoy } from '../utils/formato';
+import AsistenteModal from '../components/AsistenteModal.vue';
+import Contador from '../components/Contador.vue';
+import Paginador from '../components/Paginador.vue';
+import DocumentoModal from '../components/inventario/DocumentoModal.vue';
+import Icono from '../components/Icono.vue';
 
-const auth    = useAuthStore();
-const notif   = useNotificacionesStore();
-const alertasStore = useAlertasStore();
+const ruta = useRoute();
+const router = useRouter();
+const auth = useAuthStore();
+const alertas = useAlertasStore();
+const catalogos = useCatalogosStore();
+const notif = useNotificacionesStore();
 
-const hoy = new Date().toISOString().split('T')[0];
+const todos = ref([]);
+const cargando = ref(true);
+const procesando = ref(false);
+const busqueda = ref('');
+const categoria = ref(ruta.query.categoria || '');
+const estado = ref(ruta.query.estado || '');
 
-const categorias = [
-  { valor: '',                nombre: 'Todas' },
-  { valor: 'prehospitalario', nombre: 'Pre-hospitalario' },
-  { valor: 'cafeteria',       nombre: 'Cafetería' },
-  { valor: 'libreria',        nombre: 'Librería' },
-  { valor: 'limpieza',        nombre: 'Limpieza' }
-];
-
-const insumos   = ref([]);
-const todos     = ref([]);
-const alertas   = ref({ existencia_critica: [], proximos_a_vencer: [] });
-const serviciosVinculo = ref([]);
-const cargando  = ref(true);
-const procesando= ref(false);
-const busqueda  = ref('');
-
-const filtros = reactive({ categoria: '', estado: '' });
-
-const modalInsumo   = ref(false);
-const modalEliminar = ref(false);
-const modalEntrada  = ref(false);
-const modalSalida   = ref(false);
-
-const insumo = reactive({
-  id: null, nombre: '', categoria: '', unidad_medida: '', stock_minimo: 5
-});
-const insumoEliminar = ref(null);
-
-const entrada = reactive({
-  insumo_id: '', cantidad: null, numero_lote: '',
-  fecha_vencimiento: '', observaciones: ''
-});
-const salida = reactive({
-  insumo_id: '', cantidad: null, emergencia_id: '', observaciones: ''
-});
-
-const totalAlertas = computed(() =>
-  alertas.value.existencia_critica.length + alertas.value.proximos_a_vencer.length
-);
-
-const insumosFiltrados = computed(() => {
-  const t = busqueda.value.trim().toLowerCase();
-  if (!t) return insumos.value;
-  return insumos.value.filter(i => i.nombre.toLowerCase().includes(t));
-});
-
-const porCategoria = (cat) => todos.value.filter(i => i.categoria === cat);
-
-const claseEstado = (e) =>
-  e === 'agotado' ? 'et-peligro' : e === 'bajo' ? 'et-alerta' : 'et-exito';
-const textoEstado = (e) =>
-  e === 'agotado' ? 'Agotado' : e === 'bajo' ? 'Existencia baja' : 'Normal';
-
-const NOMBRES = {
-  ambulancia:'Ambulancia', incendio:'Incendio', rescate:'Rescate',
-  varios:'Varios', agua:'Agua'
+const modalMov = ref(false);
+const tipoMov = ref('entrada');
+const modalInsumo = ref(false);
+const insumo = reactive({ id: null, nombre: '', categoria: '', unidad_medida: '', stock_minimo: 5, clase: 'consumible', presentacion: '', factor_presentacion: 1 });
+const AYUDA_CLASE = {
+  consumible_vence: 'Pide lote y vencimiento al entrar',
+  consumible: 'Se gasta, pero no vence',
+  equipo: 'No se consume; no lleva lote'
 };
-const nombreTipo = (t) => NOMBRES[t] || t;
-const formatoFecha = (f) => new Date(f).toLocaleDateString('es-GT',
-  { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC' });
+
+const UNIDADES = ['unidad', 'caja', 'paquete', 'bolsa', 'bote', 'frasco', 'galón', 'rollo', 'resma'];
+const pasosInsumo = computed(() => [
+  { pregunta: '¿Cómo se llama el insumo?', obligatorio: true, valido: !!insumo.nombre.trim(), falta: 'Escriba el nombre' },
+  { pregunta: '¿De qué categoría es?', obligatorio: true, valido: !!insumo.categoria, falta: 'Elija una categoría' },
+  { pregunta: '¿Cómo se mide?' },
+  { pregunta: '¿Qué clase de insumo es?', obligatorio: true, valido: !!insumo.clase && insumo.factor_presentacion >= 1, falta: 'Elija la clase' }
+]);
+
+const filtrados = computed(() => {
+  const t = busqueda.value.trim().toLowerCase();
+  return todos.value.filter(i =>
+    (!categoria.value || i.categoria === categoria.value)
+    && (!estado.value || i.estado === estado.value)
+    && (!t || i.nombre.toLowerCase().includes(t)))
+    .sort((a, b) => prioridad(a) - prioridad(b) || a.nombre.localeCompare(b.nombre));
+});
+// De 25 en 25: primero lo que necesita atención (agotado, vencido, bajo)
+const POR_PAGINA = 25;
+const pagina = ref(1);
+const paginados = computed(() => filtrados.value.slice((pagina.value - 1) * POR_PAGINA, pagina.value * POR_PAGINA));
+watch([busqueda, categoria, estado], () => { pagina.value = 1; });
+const prioridad = (i) => (i.estado === 'agotado' ? 0 : i.cantidad_vencida ? 1 : i.estado === 'bajo' ? 2 : 3);
+
+const resumen = computed(() => {
+  const a = alertas.datos.resumen;
+  return [
+    { clave: 'total', nombre: 'Insumos activos', valor: todos.value.length, pie: `${todos.value.filter(i => i.estado === 'normal').length} con existencia normal`, filtro: 'normal' },
+    { clave: 'agotados', nombre: 'Agotados', valor: a.agotados, pie: 'sin existencia', filtro: 'agotado', clase: a.agotados ? 'critico' : '' },
+    { clave: 'bajos', nombre: 'Bajo el mínimo', valor: a.bajos, pie: 'requieren reposición', filtro: 'bajo', clase: a.bajos ? 'atencion' : '' },
+    { clave: 'vencidos', nombre: 'Lotes vencidos', valor: a.vencidos, pie: 'con saldo por dar de baja', to: '/lotes?estado=vencidos', clase: a.vencidos ? 'critico' : '' },
+    { clave: 'por_vencer', nombre: 'Por vencer', valor: a.por_vencer, pie: 'lotes en los próximos 90 días', to: '/lotes?estado=por_vencer', clase: a.por_vencer ? 'atencion' : '' }
+  ];
+});
+
+const claseEstado = (e) => (e === 'agotado' ? 'et-peligro' : e === 'bajo' ? 'et-alerta' : 'et-exito');
+const textoEstado = (e) => (e === 'agotado' ? 'Agotado' : e === 'bajo' ? 'Bajo el mínimo' : 'Normal');
+
+
+const dias = (iso) => Math.round((new Date(iso + 'T00:00:00') - new Date(hoy() + 'T00:00:00')) / 86400000);
+const textoDias = (iso) => {
+  const d = dias(iso);
+  return d < 0 ? `vencido hace ${-d} d` : d === 0 ? 'vence hoy' : `en ${d} d`;
+};
+const claseVenc = (i) => {
+  if (!i.proximo_vencimiento) return '';
+  const d = dias(i.proximo_vencimiento);
+  return d < 0 ? 'vencido' : d <= 30 ? 'critico' : d <= 90 ? 'proximo' : '';
+};
 
 const cargar = async () => {
   cargando.value = true;
   try {
-    const params = {};
-    if (filtros.categoria) params.categoria = filtros.categoria;
-    if (filtros.estado)    params.estado    = filtros.estado;
-
-    const [lista, completa, alr] = await Promise.all([
-      inventario.listar(params),
-      inventario.listar(),
-      inventario.alertas()
-    ]);
-    insumos.value = lista.data.insumos;
-    todos.value   = completa.data.insumos;
-    alertas.value = alr.data;
-    alertasStore.cargar();
-  } catch {
-    notif.error('No se pudo cargar el inventario');
+    const { data } = await inventario.listar();
+    todos.value = data.insumos;
+    alertas.cargar();
+  } catch (e) {
+    notif.error(mensajeError(e, 'No se pudo cargar el inventario'));
   } finally {
     cargando.value = false;
   }
 };
 
-// ── INSUMO ──────────────────────────────────────
+const abrirDocumento = (tipo) => {
+  tipoMov.value = tipo;
+  modalMov.value = true;
+};
+
 const abrirInsumo = (i = null) => {
-  if (i) {
-    Object.assign(insumo, {
-      id: i.id, nombre: i.nombre, categoria: i.categoria,
-      unidad_medida: i.unidad_medida || '', stock_minimo: i.stock_minimo
-    });
-  } else {
-    Object.assign(insumo, {
-      id: null, nombre: '', categoria: '', unidad_medida: '', stock_minimo: 5
-    });
-  }
+  Object.assign(insumo, i
+    ? { id: i.id, nombre: i.nombre, categoria: i.categoria, unidad_medida: i.unidad_medida || '', stock_minimo: i.stock_minimo,
+        clase: i.clase || 'consumible', presentacion: i.presentacion || '', factor_presentacion: i.factor_presentacion || 1 }
+    : { id: null, nombre: '', categoria: categoria.value || '', unidad_medida: '', stock_minimo: 5, clase: 'consumible', presentacion: '', factor_presentacion: 1 });
   modalInsumo.value = true;
 };
 
 const guardarInsumo = async () => {
-  if (!insumo.nombre || !insumo.categoria) {
-    return notif.alerta('Indique el nombre y la categoría del insumo');
-  }
   procesando.value = true;
   try {
-    const carga = {
-      nombre: insumo.nombre.trim(),
-      categoria: insumo.categoria,
-      unidad_medida: insumo.unidad_medida || null,
-      stock_minimo: insumo.stock_minimo ?? 5
-    };
-    const { data } = insumo.id
-      ? await inventario.editarInsumo(insumo.id, carga)
-      : await inventario.crearInsumo(carga);
-
+    const carga = { nombre: insumo.nombre, categoria: insumo.categoria, unidad_medida: insumo.unidad_medida, stock_minimo: insumo.stock_minimo ?? 0,
+      clase: insumo.clase, presentacion: insumo.presentacion, factor_presentacion: insumo.factor_presentacion };
+    const { data } = insumo.id ? await inventario.editarInsumo(insumo.id, carga) : await inventario.crearInsumo(carga);
     notif.exito(data.mensaje);
     modalInsumo.value = false;
     cargar();
   } catch (e) {
-    notif.error(e.response?.data?.mensaje || 'No se pudo guardar el insumo');
+    notif.error(mensajeError(e));
   } finally {
     procesando.value = false;
   }
 };
 
-const confirmarEliminar = (i) => {
-  insumoEliminar.value = i;
-  modalEliminar.value = true;
-};
-
-const eliminarInsumo = async () => {
-  procesando.value = true;
+const retirarInsumo = async () => {
+  if (!confirm(`¿Retirar «${insumo.nombre}» del catálogo? Su historial se conserva.`)) return;
   try {
-    const { data } = await inventario.eliminarInsumo(insumoEliminar.value.id);
+    const { data } = await inventario.eliminarInsumo(insumo.id);
     notif.exito(data.mensaje);
-    modalEliminar.value = false;
+    modalInsumo.value = false;
     cargar();
   } catch (e) {
-    notif.error(e.response?.data?.mensaje || 'No se pudo eliminar el insumo');
-  } finally {
-    procesando.value = false;
+    notif.error(mensajeError(e));
   }
 };
 
-// ── ENTRADA Y SALIDA ────────────────────────────
-const abrirEntrada = () => {
-  Object.assign(entrada, { insumo_id:'', cantidad:null, numero_lote:'',
-                           fecha_vencimiento:'', observaciones:'' });
-  modalEntrada.value = true;
-};
+watch([categoria, estado], () => {
+  router.replace({ query: Object.fromEntries(Object.entries({ categoria: categoria.value, estado: estado.value }).filter(([, v]) => v)) });
+});
 
-const abrirSalida = async () => {
-  Object.assign(salida, { insumo_id:'', cantidad:null, emergencia_id:'', observaciones:'' });
-  try {
-    const { data } = await emergencias.paraVinculo();
-    serviciosVinculo.value = data;
-  } catch { /* silencioso */ }
-  modalSalida.value = true;
-};
-
-const guardarEntrada = async () => {
-  if (!entrada.insumo_id || !entrada.cantidad) {
-    return notif.alerta('Seleccione el insumo e indique la cantidad');
-  }
-  if (entrada.fecha_vencimiento && entrada.fecha_vencimiento < hoy) {
-    return notif.alerta('La fecha de vencimiento no puede ser anterior a hoy');
-  }
-  procesando.value = true;
-  try {
-    const { data } = await inventario.entrada({
-      ...entrada,
-      numero_lote: entrada.numero_lote || null,
-      fecha_vencimiento: entrada.fecha_vencimiento || null
-    });
-    notif.exito(`Entrada registrada. ${data.insumo.nombre}: ${data.insumo.stock_actual}`);
-    modalEntrada.value = false;
-    cargar();
-  } catch (e) {
-    notif.error(e.response?.data?.mensaje || 'No se pudo registrar la entrada');
-  } finally {
-    procesando.value = false;
-  }
-};
-
-const guardarSalida = async () => {
-  if (!salida.insumo_id || !salida.cantidad) {
-    return notif.alerta('Seleccione el insumo e indique la cantidad');
-  }
-  if (!salida.emergencia_id) {
-    return notif.alerta('Debe vincular la salida a un servicio de emergencia');
-  }
-  procesando.value = true;
-  try {
-    const { data } = await inventario.salida(salida);
-    notif.exito(`Salida registrada. ${data.insumo.nombre}: ${data.insumo.stock_actual}`);
-    if (data.alerta) notif.alerta(data.alerta);
-    modalSalida.value = false;
-    cargar();
-  } catch (e) {
-    notif.error(e.response?.data?.mensaje || 'No se pudo registrar la salida');
-  } finally {
-    procesando.value = false;
-  }
-};
-
-onMounted(cargar);
+onMounted(() => {
+  catalogos.cargar().catch(() => {});
+  cargar();
+});
 </script>
 
 <style scoped>
-.aviso-alertas {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 16px; margin-bottom: 16px;
-  background: var(--alerta-fondo); color: var(--alerta);
-  border: 1px solid currentColor;
-  border-radius: var(--radio);
-  font-size: 13.5px;
-}
-.aviso-alertas svg { flex-shrink: 0; }
+.indicador-filtro { text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.indicador-filtro:hover { border-color: var(--borde-fuerte); }
+.indicador-filtro.elegido { border-color: var(--azul); background: var(--azul-tenue); }
 
-.barra-filtros {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 14px; margin-bottom: 16px; flex-wrap: wrap;
-}
-
-.pestanas {
-  display: flex; gap: 4px;
-  padding: 4px;
-  background: var(--superficie-alt);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio);
-}
-.pestana {
-  padding: 7px 14px;
-  background: transparent; border: none; border-radius: var(--radio-sm);
-  color: var(--texto-suave);
-  font: inherit; font-size: 12.5px; font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transicion);
-}
-.pestana:hover { color: var(--texto); }
-.pestana.activa {
-  background: var(--superficie); color: var(--rojo-bomberos);
-  box-shadow: var(--sombra-sm);
-}
-
-.control-estado   { width: auto; min-width: 170px; }
-.control-busqueda { width: auto; min-width: 190px; }
-
-.estado-carga {
-  display: flex; flex-direction: column; align-items: center; gap: 13px; padding: 56px;
-}
-.estado-carga p { color: var(--texto-suave); font-size: 13.5px; }
-
-.capitalizar { text-transform: capitalize; }
-
-.acciones-fila { display: flex; gap: 5px; }
-.btn-accion {
-  display: flex; padding: 6px;
-  background: transparent;
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
-  color: var(--texto-suave);
-  cursor: pointer;
-  transition: all var(--transicion);
-}
-.btn-accion:hover {
-  background: var(--superficie-alt);
-  border-color: var(--texto-tenue);
-  color: var(--texto);
-}
-.btn-accion-peligro:hover {
-  background: var(--peligro-fondo);
-  border-color: var(--peligro);
-  color: var(--peligro);
-}
-
-.nota-info {
-  display: flex; align-items: flex-start; gap: 9px;
-  padding: 11px 14px; margin-bottom: 18px;
-  background: var(--info-fondo); color: var(--info);
-  border-radius: var(--radio);
-  font-size: 12.5px; line-height: 1.5;
-}
-.nota-info svg { flex-shrink: 0; margin-top: 1px; }
-
-.ayuda {
-  display: block; margin-top: 5px;
-  font-size: 11.5px; color: var(--texto-tenue);
-}
-
-.texto-eliminar { font-size: 14px; color: var(--texto); }
-.texto-eliminar strong { color: var(--peligro); }
-.nota-eliminar {
-  margin-top: 10px; padding: 10px 13px;
-  background: var(--superficie-alt);
-  border-radius: var(--radio);
-  font-size: 12.5px; line-height: 1.5;
-  color: var(--texto-suave);
-}
-
-@media (max-width: 900px) {
-  .pestanas { width: 100%; overflow-x: auto; }
-  .control-estado, .control-busqueda { width: 100%; }
-}
+.venc { font-size: 12px; white-space: nowrap; }
+.venc.vencido { color: var(--peligro); font-weight: 600; }
+.venc.critico { color: var(--alerta); font-weight: 600; }
+.venc .celda-sec { font-family: var(--fuente); }
+.rotulo-campo-i { display: block; margin-bottom: 10px; font-size: 15px; font-weight: 700; }
 </style>

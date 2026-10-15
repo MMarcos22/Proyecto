@@ -1,0 +1,14 @@
+# graphify: el grafo y su configuración para Claude se quedan solo en la computadora
+graphify-out/
+.claude/
+CLAUDE.md
+
+# Material de campo (audios de entrevistas, plantillas originales de la institución)
+Plantillas/
+
+# Dependencias y compilados: se regeneran con npm install / npm run build
+node_modules/
+dist/
+
+# Credenciales locales (copie backend/.env.example a backend/.env)
+.env

@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { soloLecturaDireccion } = require('./roles');
 require('dotenv').config();
 
 const verificarToken = (req, res, next) => {
@@ -13,7 +14,7 @@ const verificarToken = (req, res, next) => {
     try {
         const datos = jwt.verify(token, process.env.JWT_SECRET);
         req.usuario = datos;
-        next();
+        soloLecturaDireccion(req, res, next);
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
             return res.status(401).json({ mensaje: 'La sesión ha expirado' });

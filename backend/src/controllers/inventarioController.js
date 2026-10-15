@@ -1,72 +1,69 @@
 const { query, getClient } = require('../config/database');
+const { CATEGORIAS, CLASES_INSUMO } = require('../config/dominio');
+const { registrarBitacora, entero } = require('../utils/comun');
+const {
+    ErrorNegocio, registrarEntrada: entradaServicio,
+    registrarSalida: salidaServicio, anularMovimiento
+} = require('../services/inventarioService');
 
-// ── LISTAR EXISTENCIAS ───────────────────────────
+const DIAS_AVISO_VENCIMIENTO = 90;
+
+const ejecutar = (contexto, fn) => async (req, res) => {
+    const cliente = await getClient();
+    try {
+        await cliente.query('BEGIN');
+        const r = await fn(cliente, req);
+        await cliente.query('COMMIT');
+        res.status(r.estado || 200).json(r.cuerpo);
+    } catch (error) {
+        await cliente.query('ROLLBACK');
+        if (error instanceof ErrorNegocio) return res.status(error.estado).json({ mensaje: error.message });
+        if (error.code === '23505') return res.status(409).json({ mensaje: 'Registro duplicado' });
+        console.error(contexto, error);
+        res.status(500).json({ mensaje: 'Ocurrió un error al procesar el movimiento' });
+    } finally {
+        cliente.release();
+    }
+};
+
+// ── EXISTENCIAS ──────────────────────────────────
+// Estado: agotado (0), bajo (<= mínimo), normal. Se agregan datos de lote y consumo de 90 días
 const listarInsumos = async (req, res) => {
     const { categoria, estado } = req.query;
-
-    const condiciones = ['activo = TRUE'];
-    const valores = [];
-
-    if (categoria) {
-        valores.push(categoria);
-        condiciones.push(`categoria = $${valores.length}`);
-    }
+    const val = [];
+    let filtro = '';
+    if (categoria) { val.push(categoria); filtro = `AND i.categoria = $1`; }
 
     try {
-        const resultado = await query(`
-      SELECT id, nombre, categoria, unidad_medida, stock_actual, stock_minimo,
-        CASE
-          WHEN stock_actual = 0                THEN 'agotado'
-          WHEN stock_actual <= stock_minimo    THEN 'bajo'
-          ELSE 'normal'
-        END AS estado
-      FROM insumos
-      WHERE ${condiciones.join(' AND ')}
-      ORDER BY categoria, nombre`, valores);
+        const r = await query(`
+      SELECT i.id, i.nombre, i.categoria, i.clase, i.presentacion, i.factor_presentacion,
+        i.unidad_medida, i.stock_actual, i.stock_minimo,
+        CASE WHEN i.stock_actual = 0 THEN 'agotado'
+             WHEN i.stock_actual <= i.stock_minimo THEN 'bajo'
+             ELSE 'normal' END AS estado,
+        (SELECT COUNT(*)::int FROM lotes l WHERE l.insumo_id = i.id AND l.saldo > 0) AS lotes_vigentes,
+        (SELECT MIN(l.fecha_vencimiento) FROM lotes l
+          WHERE l.insumo_id = i.id AND l.saldo > 0) AS proximo_vencimiento,
+        (SELECT COALESCE(SUM(l.saldo),0)::int FROM lotes l
+          WHERE l.insumo_id = i.id AND l.saldo > 0 AND l.fecha_vencimiento < CURRENT_DATE) AS cantidad_vencida,
+        (SELECT COALESCE(SUM(m.cantidad),0)::int FROM movimientos_inventario m
+          WHERE m.insumo_id = i.id AND m.tipo_movimiento = 'salida'
+            AND m.motivo IN ('entrega_escuadra','consumo_servicio','uso_interno')
+            AND m.fecha_movimiento > CURRENT_DATE - 90) AS consumo_90
+      FROM insumos i
+      WHERE i.activo = TRUE ${filtro}
+      ORDER BY i.categoria, i.nombre`, val);
 
-        let insumos = resultado.rows;
-        if (estado) insumos = insumos.filter(i => i.estado === estado);
-
+        const insumos = estado ? r.rows.filter(i => i.estado === estado) : r.rows;
         res.json({ total: insumos.length, insumos });
-
     } catch (error) {
         console.error('Error al listar insumos:', error);
         res.status(500).json({ mensaje: 'Error al consultar las existencias' });
     }
 };
 
-// ── ALERTAS RESUMIDAS ────────────────────────────
-const obtenerAlertas = async (req, res) => {
-    try {
-        const bajos = await query(`
-      SELECT id, nombre, categoria, stock_actual, stock_minimo,
-        CASE WHEN stock_actual = 0 THEN 'agotado' ELSE 'bajo' END AS estado
-      FROM insumos
-      WHERE activo = TRUE AND stock_actual <= stock_minimo
-      ORDER BY stock_actual, nombre`);
-
-        const vencer = await query(`
-      SELECT DISTINCT i.id, i.nombre, m.numero_lote, m.fecha_vencimiento,
-             (m.fecha_vencimiento - CURRENT_DATE) AS dias_restantes
-      FROM movimientos_inventario m
-      JOIN insumos i ON i.id = m.insumo_id
-      WHERE m.tipo_movimiento = 'entrada'
-        AND m.fecha_vencimiento IS NOT NULL
-        AND m.fecha_vencimiento <= CURRENT_DATE + INTERVAL '60 days'
-      ORDER BY m.fecha_vencimiento`);
-
-        res.json({
-            existencia_critica: bajos.rows,
-            proximos_a_vencer: vencer.rows
-        });
-
-    } catch (error) {
-        console.error('Error al obtener alertas:', error);
-        res.status(500).json({ mensaje: 'Error al consultar las alertas' });
-    }
-};
-
-// ── DETALLE DE ALERTAS PARA CAMPANA ──────────────
+// ── ALERTAS ──────────────────────────────────────
+// Los vencimientos solo consideran lotes con saldo: un lote consumido no genera aviso
 const alertasDetalladas = async (req, res) => {
     try {
         const criticos = await query(`
@@ -76,33 +73,28 @@ const alertasDetalladas = async (req, res) => {
       WHERE activo = TRUE AND stock_actual <= stock_minimo
       ORDER BY stock_actual ASC, nombre`);
 
-        const vencimientos = await query(`
-      SELECT i.id, i.nombre, i.categoria, i.unidad_medida,
-             m.numero_lote, m.fecha_vencimiento, m.cantidad,
-             (m.fecha_vencimiento - CURRENT_DATE)::int AS dias_restantes,
-        CASE
-          WHEN m.fecha_vencimiento < CURRENT_DATE THEN 'vencido'
-          WHEN m.fecha_vencimiento <= CURRENT_DATE + 30 THEN 'critico'
-          ELSE 'proximo'
-        END AS urgencia
-      FROM movimientos_inventario m
-      JOIN insumos i ON i.id = m.insumo_id
-      WHERE m.tipo_movimiento = 'entrada'
-        AND m.fecha_vencimiento IS NOT NULL
-        AND m.fecha_vencimiento <= CURRENT_DATE + 90
-      ORDER BY m.fecha_vencimiento ASC`);
+        const lotes = await query(`
+      SELECT l.id AS lote_id, i.id, i.nombre, i.categoria, i.unidad_medida,
+             l.numero_lote, l.fecha_vencimiento, l.saldo AS cantidad,
+             (l.fecha_vencimiento - CURRENT_DATE)::int AS dias_restantes,
+        CASE WHEN l.fecha_vencimiento < CURRENT_DATE THEN 'vencido'
+             WHEN l.fecha_vencimiento <= CURRENT_DATE + 30 THEN 'critico'
+             ELSE 'proximo' END AS urgencia
+      FROM lotes l JOIN insumos i ON i.id = l.insumo_id
+      WHERE l.saldo > 0 AND i.activo = TRUE
+        AND l.fecha_vencimiento IS NOT NULL
+        AND l.fecha_vencimiento <= CURRENT_DATE + ${DIAS_AVISO_VENCIMIENTO}
+      ORDER BY l.fecha_vencimiento ASC`);
 
         const agotados = criticos.rows.filter(i => i.estado === 'agotado');
         const bajos = criticos.rows.filter(i => i.estado === 'bajo');
-        const vencidos = vencimientos.rows.filter(v => v.urgencia === 'vencido');
-        const porVencer = vencimientos.rows.filter(v => v.urgencia !== 'vencido');
+        const vencidos = lotes.rows.filter(v => v.urgencia === 'vencido');
+        const porVencer = lotes.rows.filter(v => v.urgencia !== 'vencido');
 
         res.json({
             resumen: {
-                agotados: agotados.length,
-                bajos: bajos.length,
-                vencidos: vencidos.length,
-                por_vencer: porVencer.length,
+                agotados: agotados.length, bajos: bajos.length,
+                vencidos: vencidos.length, por_vencer: porVencer.length,
                 total: agotados.length + bajos.length + vencidos.length + porVencer.length
             },
             insumos_agotados: agotados,
@@ -110,472 +102,233 @@ const alertasDetalladas = async (req, res) => {
             lotes_vencidos: vencidos,
             lotes_por_vencer: porVencer
         });
-
     } catch (error) {
-        console.error('Error al obtener alertas detalladas:', error);
+        console.error('Error al obtener alertas:', error);
         res.status(500).json({ mensaje: 'Error al consultar las alertas' });
     }
 };
 
-// ── REGISTRAR ENTRADA ────────────────────────────
-const registrarEntrada = async (req, res) => {
-    const { insumo_id, cantidad, numero_lote, fecha_vencimiento,
-        fecha_movimiento, observaciones } = req.body;
-
-    if (!insumo_id || !cantidad || cantidad <= 0) {
-        return res.status(400).json({ mensaje: 'Debe indicar el insumo y una cantidad válida' });
-    }
-
-    if (fecha_vencimiento) {
-        const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-        const venc = new Date(fecha_vencimiento + 'T00:00:00');
-        if (venc < hoy) {
-            return res.status(400).json({
-                mensaje: 'La fecha de vencimiento no puede ser anterior a la fecha actual'
-            });
-        }
-    }
-
-    const cliente = await getClient();
+// ── LOTES ────────────────────────────────────────
+const listarLotes = async (req, res) => {
+    const { insumo_id, categoria, estado } = req.query;
+    const cond = ['i.activo = TRUE'];
+    const val = [];
+    if (insumo_id) { val.push(insumo_id); cond.push(`l.insumo_id = $${val.length}`); }
+    if (categoria) { val.push(categoria); cond.push(`i.categoria = $${val.length}`); }
+    if (estado === 'vigentes') cond.push('l.saldo > 0');
+    if (estado === 'vencidos') cond.push('l.saldo > 0 AND l.fecha_vencimiento < CURRENT_DATE');
+    if (estado === 'por_vencer') cond.push(`l.saldo > 0 AND l.fecha_vencimiento BETWEEN CURRENT_DATE AND CURRENT_DATE + ${DIAS_AVISO_VENCIMIENTO}`);
+    if (estado === 'agotados') cond.push('l.saldo = 0');
 
     try {
-        await cliente.query('BEGIN');
-
-        if (numero_lote) {
-            const lote = await cliente.query(
-                `SELECT id FROM movimientos_inventario
-         WHERE insumo_id = $1 AND numero_lote = $2 AND tipo_movimiento = 'entrada'`,
-                [insumo_id, numero_lote]
-            );
-            if (lote.rows.length > 0) {
-                await cliente.query('ROLLBACK');
-                return res.status(409).json({
-                    mensaje: 'El número de lote ya fue registrado para este insumo'
-                });
-            }
-        }
-
-        await cliente.query(`
-      INSERT INTO movimientos_inventario
-        (insumo_id, tipo_movimiento, cantidad, numero_lote, fecha_vencimiento,
-         fecha_movimiento, observaciones, usuario_id)
-      VALUES ($1, 'entrada', $2, $3, $4, COALESCE($5, CURRENT_DATE), $6, $7)`,
-            [insumo_id, cantidad, numero_lote || null, fecha_vencimiento || null,
-                fecha_movimiento || null, observaciones || null, req.usuario.id]);
-
-        const actualizado = await cliente.query(
-            `UPDATE insumos SET stock_actual = stock_actual + $1
-       WHERE id = $2 RETURNING nombre, stock_actual`,
-            [cantidad, insumo_id]
-        );
-
-        await cliente.query('COMMIT');
-
-        res.status(201).json({
-            mensaje: 'Entrada registrada correctamente',
-            insumo: actualizado.rows[0]
-        });
-
+        const r = await query(`
+      SELECT l.id, l.insumo_id, i.nombre AS insumo, i.categoria, i.unidad_medida,
+             l.numero_lote, l.fecha_vencimiento, l.fecha_ingreso, l.cantidad_inicial, l.saldo,
+             (l.fecha_vencimiento - CURRENT_DATE)::int AS dias_restantes
+      FROM lotes l JOIN insumos i ON i.id = l.insumo_id
+      WHERE ${cond.join(' AND ')}
+      ORDER BY (l.saldo = 0), l.fecha_vencimiento NULLS LAST, i.nombre`, val);
+        res.json({ total: r.rows.length, lotes: r.rows });
     } catch (error) {
-        await cliente.query('ROLLBACK');
-        console.error('Error al registrar entrada:', error);
-        res.status(500).json({ mensaje: 'Error al registrar la entrada' });
-    } finally {
-        cliente.release();
+        console.error('Error al listar lotes:', error);
+        res.status(500).json({ mensaje: 'Error al consultar los lotes' });
     }
 };
 
-// ── REGISTRAR SALIDA ─────────────────────────────
-const registrarSalida = async (req, res) => {
-    const { insumo_id, cantidad, emergencia_id,
-        fecha_movimiento, observaciones } = req.body;
-
-    if (!insumo_id || !cantidad || cantidad <= 0) {
-        return res.status(400).json({ mensaje: 'Debe indicar el insumo y una cantidad válida' });
-    }
-    if (!emergencia_id) {
-        return res.status(400).json({
-            mensaje: 'Debe vincular la salida al servicio de emergencia correspondiente'
-        });
-    }
-
-    const cliente = await getClient();
-
+// ── KARDEX DE UN INSUMO (saldo acumulado por movimiento) ─
+const kardex = async (req, res) => {
+    const id = entero(req.params.id);
+    const { desde, hasta } = req.query;
     try {
-        await cliente.query('BEGIN');
+        const insumo = await query(
+            'SELECT id, nombre, categoria, unidad_medida, stock_actual, stock_minimo FROM insumos WHERE id = $1', [id]);
+        if (!insumo.rows.length) return res.status(404).json({ mensaje: 'El insumo no existe' });
 
-        const insumo = await cliente.query(
-            'SELECT nombre, stock_actual, stock_minimo FROM insumos WHERE id = $1 FOR UPDATE',
-            [insumo_id]
-        );
+        const r = await query(`
+      SELECT m.id, m.tipo_movimiento, m.motivo, m.cantidad, m.numero_lote, m.fecha_vencimiento,
+             m.fecha_movimiento, m.documento, m.observaciones, m.emergencia_id,
+             e.numero_control AS servicio, e.tipo_servicio,
+             u.nombre_completo AS registrado_por,
+             SUM(CASE WHEN m.tipo_movimiento = 'entrada' THEN m.cantidad ELSE -m.cantidad END)
+               OVER (ORDER BY m.fecha_movimiento, m.id)::int AS saldo
+      FROM movimientos_inventario m
+      JOIN usuarios u ON u.id = m.usuario_id
+      LEFT JOIN emergencias e ON e.id = m.emergencia_id
+      WHERE m.insumo_id = $1
+      ORDER BY m.fecha_movimiento, m.id`, [id]);
 
-        if (insumo.rows.length === 0) {
-            await cliente.query('ROLLBACK');
-            return res.status(404).json({ mensaje: 'El insumo no existe' });
-        }
+        let movimientos = r.rows;
+        if (desde) movimientos = movimientos.filter(m => m.fecha_movimiento >= desde);
+        if (hasta) movimientos = movimientos.filter(m => m.fecha_movimiento <= hasta);
 
-        if (insumo.rows[0].stock_actual < cantidad) {
-            await cliente.query('ROLLBACK');
-            return res.status(400).json({
-                mensaje: `Existencia insuficiente. Disponible: ${insumo.rows[0].stock_actual}`
-            });
-        }
-
-        await cliente.query(`
-      INSERT INTO movimientos_inventario
-        (insumo_id, tipo_movimiento, cantidad, emergencia_id,
-         fecha_movimiento, observaciones, usuario_id)
-      VALUES ($1, 'salida', $2, $3, COALESCE($4, CURRENT_DATE), $5, $6)`,
-            [insumo_id, cantidad, emergencia_id, fecha_movimiento || null,
-                observaciones || null, req.usuario.id]);
-
-        const actualizado = await cliente.query(
-            `UPDATE insumos SET stock_actual = stock_actual - $1
-       WHERE id = $2 RETURNING nombre, stock_actual, stock_minimo`,
-            [cantidad, insumo_id]
-        );
-
-        await cliente.query('COMMIT');
-
-        const resultado = actualizado.rows[0];
-        let alerta = null;
-        if (resultado.stock_actual === 0) {
-            alerta = `El insumo ${resultado.nombre} ha quedado agotado`;
-        } else if (resultado.stock_actual <= resultado.stock_minimo) {
-            alerta = `El insumo ${resultado.nombre} se encuentra por debajo del mínimo`;
-        }
-
-        res.status(201).json({
-            mensaje: 'Salida registrada correctamente',
-            insumo: resultado,
-            alerta
-        });
-
+        res.json({ insumo: insumo.rows[0], movimientos });
     } catch (error) {
-        await cliente.query('ROLLBACK');
-        console.error('Error al registrar salida:', error);
-        res.status(500).json({ mensaje: 'Error al registrar la salida' });
-    } finally {
-        cliente.release();
+        console.error('Error al generar kardex:', error);
+        res.status(500).json({ mensaje: 'Error al consultar el kardex' });
     }
 };
+
+// ── ENTRADA / SALIDA / ANULACIÓN ─────────────────
+const registrarEntrada = ejecutar('Error al registrar entrada:', async (db, req) => {
+    const r = await entradaServicio(db, req.body, req.usuario.id);
+    return { estado: 201, cuerpo: { mensaje: 'Entrada registrada', ...r } };
+});
+
+const registrarSalida = ejecutar('Error al registrar salida:', async (db, req) => {
+    const r = await salidaServicio(db, req.body, req.usuario.id);
+    return { estado: 201, cuerpo: { mensaje: 'Salida registrada', ...r } };
+});
+
+const eliminarMovimiento = ejecutar('Error al anular movimiento:', async (db, req) => {
+    await anularMovimiento(db, entero(req.params.id), req.usuario.id, req.body?.motivo);
+    return { cuerpo: { mensaje: 'Movimiento anulado y existencia restablecida' } };
+});
 
 // ── HISTORIAL DE MOVIMIENTOS ─────────────────────
 const listarMovimientos = async (req, res) => {
-    const { tipo, categoria, mes, anio, insumo_id } = req.query;
+    const { tipo, motivo, categoria, desde, hasta, insumo_id, texto } = req.query;
+    const pagina = Math.max(1, entero(req.query.pagina) || 1);
+    const tamano = Math.min(200, Math.max(10, entero(req.query.tamano) || 50));
 
-    const condiciones = [];
-    const valores = [];
+    const cond = [];
+    const val = [];
+    const agregar = (sql, v) => { val.push(v); cond.push(sql.replace('?', `$${val.length}`)); };
+    if (tipo) agregar('m.tipo_movimiento = ?', tipo);
+    if (motivo) agregar('m.motivo = ?', motivo);
+    if (categoria) agregar('i.categoria = ?', categoria);
+    if (insumo_id) agregar('m.insumo_id = ?', insumo_id);
+    if (desde) agregar('m.fecha_movimiento >= ?', desde);
+    if (hasta) agregar('m.fecha_movimiento <= ?', hasta);
+    if (texto?.trim()) agregar('(i.nombre ILIKE ? OR m.numero_lote ILIKE $X OR e.numero_control ILIKE $X)'.replace(/\$X/g, `$${val.length + 1}`), `%${texto.trim()}%`);
 
-    if (tipo) { valores.push(tipo); condiciones.push(`m.tipo_movimiento = $${valores.length}`); }
-    if (categoria) { valores.push(categoria); condiciones.push(`i.categoria = $${valores.length}`); }
-    if (insumo_id) { valores.push(insumo_id); condiciones.push(`m.insumo_id = $${valores.length}`); }
-    if (mes) { valores.push(mes); condiciones.push(`EXTRACT(MONTH FROM m.fecha_movimiento) = $${valores.length}`); }
-    if (anio) { valores.push(anio); condiciones.push(`EXTRACT(YEAR  FROM m.fecha_movimiento) = $${valores.length}`); }
-
-    const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+    const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+    const desdeSql = `
+    FROM movimientos_inventario m
+    JOIN insumos i  ON i.id = m.insumo_id
+    JOIN usuarios u ON u.id = m.usuario_id
+    LEFT JOIN emergencias e ON e.id = m.emergencia_id
+    ${where}`;
 
     try {
-        const resultado = await query(`
-      SELECT m.id, m.tipo_movimiento, m.cantidad, m.numero_lote, m.fecha_vencimiento,
-             m.fecha_movimiento, m.observaciones,
+        const totales = await query(`
+      SELECT COUNT(*)::int AS n,
+             COUNT(*) FILTER (WHERE m.tipo_movimiento = 'entrada')::int AS entradas,
+             COUNT(*) FILTER (WHERE m.tipo_movimiento = 'salida')::int AS salidas
+      ${desdeSql}`, val);
+        const r = await query(`
+      SELECT m.id, m.tipo_movimiento, m.motivo, m.cantidad, m.numero_lote, m.fecha_vencimiento,
+             m.fecha_movimiento, m.documento, m.observaciones, m.insumo_id,
              i.nombre AS insumo, i.categoria, i.unidad_medida,
-             e.numero_control AS servicio, e.tipo_servicio,
+             m.emergencia_id, e.numero_control AS servicio, e.tipo_servicio,
              u.nombre_completo AS registrado_por
-      FROM movimientos_inventario m
-      JOIN insumos i  ON i.id = m.insumo_id
-      JOIN usuarios u ON u.id = m.usuario_id
-      LEFT JOIN emergencias e ON e.id = m.emergencia_id
-      ${where}
-      ORDER BY m.fecha_movimiento DESC, m.id DESC`, valores);
+      ${desdeSql}
+      ORDER BY m.fecha_movimiento DESC, m.id DESC
+      LIMIT ${tamano} OFFSET ${(pagina - 1) * tamano}`, val);
 
-        res.json({ total: resultado.rows.length, movimientos: resultado.rows });
-
+        res.json({ ...totales.rows[0], total: totales.rows[0].n, pagina, tamano, movimientos: r.rows });
     } catch (error) {
         console.error('Error al listar movimientos:', error);
         res.status(500).json({ mensaje: 'Error al consultar los movimientos' });
     }
 };
 
-// ── MOVIMIENTOS DE UN INSUMO EN UN MES ───────────
-const movimientosDeInsumo = async (req, res) => {
-    const { id } = req.params;
-    const { mes, anio, tipo } = req.query;
-
-    const cond = ['m.insumo_id = $1'];
-    const val = [id];
-
-    if (mes) { val.push(mes); cond.push(`EXTRACT(MONTH FROM m.fecha_movimiento) = $${val.length}`); }
-    if (anio) { val.push(anio); cond.push(`EXTRACT(YEAR  FROM m.fecha_movimiento) = $${val.length}`); }
-    if (tipo) { val.push(tipo); cond.push(`m.tipo_movimiento = $${val.length}`); }
-
-    try {
-        const r = await query(`
-      SELECT m.id, m.tipo_movimiento, m.cantidad, m.numero_lote,
-             m.fecha_vencimiento, m.fecha_movimiento, m.observaciones,
-             m.emergencia_id,
-             e.numero_control AS servicio, e.tipo_servicio,
-             u.nombre_completo AS registrado_por
-      FROM movimientos_inventario m
-      JOIN usuarios u ON u.id = m.usuario_id
-      LEFT JOIN emergencias e ON e.id = m.emergencia_id
-      WHERE ${cond.join(' AND ')}
-      ORDER BY m.fecha_movimiento, m.id`, val);
-
-        res.json({ total: r.rows.length, movimientos: r.rows });
-
-    } catch (error) {
-        console.error('Error al listar movimientos del insumo:', error);
-        res.status(500).json({ mensaje: 'Error al consultar los movimientos' });
-    }
+// ── CATÁLOGO DE INSUMOS ──────────────────────────
+const validarInsumo = (b) => {
+    if (!b.nombre?.trim()) return 'El nombre es obligatorio';
+    if (!CATEGORIAS[b.categoria]) return 'Seleccione una categoría válida';
+    const min = Number(b.stock_minimo ?? 0);
+    if (!Number.isInteger(min) || min < 0) return 'El mínimo debe ser un entero mayor o igual a cero';
+    return null;
 };
 
-// ── EDITAR MOVIMIENTO ────────────────────────────
-const editarMovimiento = async (req, res) => {
-    const { id } = req.params;
-    const { cantidad, numero_lote, fecha_vencimiento,
-        fecha_movimiento, emergencia_id, observaciones } = req.body;
+// Clase (consumible con vencimiento, consumible, equipo) y presentación de compra
+const datosClase = (b) => ({
+    clase: CLASES_INSUMO[b.clase] ? b.clase : 'consumible',
+    presentacion: b.presentacion?.trim() || null,
+    factor: Math.max(1, entero(b.factor_presentacion) || 1)
+});
 
-    if (!cantidad || cantidad <= 0) {
-        return res.status(400).json({ mensaje: 'Indique una cantidad válida' });
-    }
-
-    const cliente = await getClient();
-
-    try {
-        await cliente.query('BEGIN');
-
-        const prev = await cliente.query(
-            'SELECT * FROM movimientos_inventario WHERE id = $1', [id]);
-
-        if (prev.rows.length === 0) {
-            await cliente.query('ROLLBACK');
-            return res.status(404).json({ mensaje: 'El movimiento no existe' });
-        }
-
-        const mov = prev.rows[0];
-
-        if (mov.tipo_movimiento === 'salida' && !emergencia_id) {
-            await cliente.query('ROLLBACK');
-            return res.status(400).json({
-                mensaje: 'La salida debe estar vinculada a un servicio de emergencia'
-            });
-        }
-
-        if (fecha_vencimiento) {
-            const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-            if (new Date(fecha_vencimiento + 'T00:00:00') < hoy) {
-                await cliente.query('ROLLBACK');
-                return res.status(400).json({
-                    mensaje: 'La fecha de vencimiento no puede ser anterior a la fecha actual'
-                });
-            }
-        }
-
-        const revertir = mov.tipo_movimiento === 'entrada' ? -mov.cantidad : mov.cantidad;
-        const aplicar = mov.tipo_movimiento === 'entrada' ? cantidad : -cantidad;
-        const ajuste = revertir + aplicar;
-
-        const insumo = await cliente.query(
-            'SELECT nombre, stock_actual FROM insumos WHERE id = $1 FOR UPDATE',
-            [mov.insumo_id]
-        );
-
-        if (insumo.rows[0].stock_actual + ajuste < 0) {
-            await cliente.query('ROLLBACK');
-            return res.status(400).json({
-                mensaje: 'El cambio dejaría la existencia en negativo'
-            });
-        }
-
-        await cliente.query(`
-      UPDATE movimientos_inventario
-      SET cantidad = $1, numero_lote = $2, fecha_vencimiento = $3,
-          fecha_movimiento = COALESCE($4, fecha_movimiento),
-          emergencia_id = $5, observaciones = $6
-      WHERE id = $7`,
-            [cantidad, numero_lote || null, fecha_vencimiento || null,
-                fecha_movimiento || null, emergencia_id || null, observaciones || null, id]);
-
-        const act = await cliente.query(
-            `UPDATE insumos SET stock_actual = stock_actual + $1
-       WHERE id = $2 RETURNING nombre, stock_actual`,
-            [ajuste, mov.insumo_id]
-        );
-
-        await cliente.query('COMMIT');
-
-        res.json({
-            mensaje: 'Movimiento actualizado correctamente',
-            insumo: act.rows[0]
-        });
-
-    } catch (error) {
-        await cliente.query('ROLLBACK');
-        console.error('Error al editar movimiento:', error);
-        res.status(500).json({ mensaje: 'Error al actualizar el movimiento' });
-    } finally {
-        cliente.release();
-    }
-};
-
-// ── ELIMINAR MOVIMIENTO ──────────────────────────
-const eliminarMovimiento = async (req, res) => {
-    const { id } = req.params;
-    const cliente = await getClient();
-
-    try {
-        await cliente.query('BEGIN');
-
-        const prev = await cliente.query(
-            'SELECT * FROM movimientos_inventario WHERE id = $1', [id]);
-
-        if (prev.rows.length === 0) {
-            await cliente.query('ROLLBACK');
-            return res.status(404).json({ mensaje: 'El movimiento no existe' });
-        }
-
-        const mov = prev.rows[0];
-        const ajuste = mov.tipo_movimiento === 'entrada' ? -mov.cantidad : mov.cantidad;
-
-        const insumo = await cliente.query(
-            'SELECT stock_actual FROM insumos WHERE id = $1 FOR UPDATE',
-            [mov.insumo_id]
-        );
-
-        if (insumo.rows[0].stock_actual + ajuste < 0) {
-            await cliente.query('ROLLBACK');
-            return res.status(400).json({
-                mensaje: 'No se puede eliminar, la existencia quedaría en negativo'
-            });
-        }
-
-        await cliente.query('DELETE FROM movimientos_inventario WHERE id = $1', [id]);
-
-        const act = await cliente.query(
-            `UPDATE insumos SET stock_actual = stock_actual + $1
-       WHERE id = $2 RETURNING nombre, stock_actual`,
-            [ajuste, mov.insumo_id]
-        );
-
-        await cliente.query('COMMIT');
-
-        res.json({
-            mensaje: 'Movimiento eliminado correctamente',
-            insumo: act.rows[0]
-        });
-
-    } catch (error) {
-        await cliente.query('ROLLBACK');
-        console.error('Error al eliminar movimiento:', error);
-        res.status(500).json({ mensaje: 'Error al eliminar el movimiento' });
-    } finally {
-        cliente.release();
-    }
-};
-
-// ── CREAR INSUMO ─────────────────────────────────
 const crearInsumo = async (req, res) => {
+    const error = validarInsumo(req.body);
+    if (error) return res.status(400).json({ mensaje: error });
     const { nombre, categoria, unidad_medida, stock_minimo } = req.body;
-
-    if (!nombre || !categoria) {
-        return res.status(400).json({ mensaje: 'El nombre y la categoría son obligatorios' });
-    }
+    const extra = datosClase(req.body);
 
     try {
         const existe = await query(
-            'SELECT id FROM insumos WHERE LOWER(nombre) = LOWER($1) AND activo = TRUE',
-            [nombre]
-        );
-        if (existe.rows.length > 0) {
-            return res.status(409).json({ mensaje: 'Ya existe un insumo con ese nombre' });
-        }
+            'SELECT id FROM insumos WHERE LOWER(nombre) = LOWER($1) AND activo = TRUE', [nombre.trim()]);
+        if (existe.rows.length) return res.status(409).json({ mensaje: 'Ya existe un insumo con ese nombre' });
 
         const r = await query(`
-      INSERT INTO insumos (nombre, categoria, unidad_medida, stock_minimo)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, nombre, categoria, unidad_medida, stock_actual, stock_minimo`,
-            [nombre, categoria, unidad_medida || null, stock_minimo ?? 5]);
-
-        res.status(201).json({ mensaje: 'Insumo agregado correctamente', insumo: r.rows[0] });
-
+      INSERT INTO insumos (nombre, categoria, unidad_medida, stock_minimo, clase, presentacion, factor_presentacion)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id, nombre, categoria, unidad_medida, stock_actual, stock_minimo, clase, presentacion, factor_presentacion`,
+            [nombre.trim(), categoria, unidad_medida?.trim() || null, stock_minimo ?? 5, extra.clase, extra.presentacion, extra.factor]);
+        await registrarBitacora({ query }, req.usuario.id, 'crear', 'insumo', r.rows[0].id, { nombre });
+        res.status(201).json({ mensaje: 'Insumo agregado', insumo: r.rows[0] });
     } catch (error) {
         console.error('Error al crear insumo:', error);
         res.status(500).json({ mensaje: 'Error al agregar el insumo' });
     }
 };
 
-// ── EDITAR INSUMO ────────────────────────────────
 const editarInsumo = async (req, res) => {
-    const { id } = req.params;
+    const error = validarInsumo(req.body);
+    if (error) return res.status(400).json({ mensaje: error });
+    const id = entero(req.params.id);
     const { nombre, categoria, unidad_medida, stock_minimo } = req.body;
-
-    if (!nombre || !categoria) {
-        return res.status(400).json({ mensaje: 'El nombre y la categoría son obligatorios' });
-    }
+    const extra = datosClase(req.body);
 
     try {
         const dup = await query(
-            'SELECT id FROM insumos WHERE LOWER(nombre) = LOWER($1) AND id <> $2 AND activo = TRUE',
-            [nombre, id]
-        );
-        if (dup.rows.length > 0) {
-            return res.status(409).json({ mensaje: 'Ya existe otro insumo con ese nombre' });
-        }
+            'SELECT id FROM insumos WHERE LOWER(nombre) = LOWER($1) AND id <> $2 AND activo = TRUE', [nombre.trim(), id]);
+        if (dup.rows.length) return res.status(409).json({ mensaje: 'Ya existe otro insumo con ese nombre' });
 
         const r = await query(`
-      UPDATE insumos
-      SET nombre = $1, categoria = $2, unidad_medida = $3, stock_minimo = $4
+      UPDATE insumos SET nombre = $1, categoria = $2, unidad_medida = $3, stock_minimo = $4,
+        clase = $6, presentacion = $7, factor_presentacion = $8
       WHERE id = $5
-      RETURNING id, nombre, categoria, unidad_medida, stock_actual, stock_minimo`,
-            [nombre, categoria, unidad_medida || null, stock_minimo ?? 5, id]);
-
-        if (r.rows.length === 0) {
-            return res.status(404).json({ mensaje: 'El insumo no existe' });
-        }
-
-        res.json({ mensaje: 'Insumo actualizado correctamente', insumo: r.rows[0] });
-
+      RETURNING id, nombre, categoria, unidad_medida, stock_actual, stock_minimo, clase, presentacion, factor_presentacion`,
+            [nombre.trim(), categoria, unidad_medida?.trim() || null, stock_minimo ?? 5, id, extra.clase, extra.presentacion, extra.factor]);
+        if (!r.rows.length) return res.status(404).json({ mensaje: 'El insumo no existe' });
+        await registrarBitacora({ query }, req.usuario.id, 'editar', 'insumo', id, req.body);
+        res.json({ mensaje: 'Insumo actualizado', insumo: r.rows[0] });
     } catch (error) {
         console.error('Error al editar insumo:', error);
         res.status(500).json({ mensaje: 'Error al actualizar el insumo' });
     }
 };
 
-// ── ELIMINAR INSUMO ──────────────────────────────
 const eliminarInsumo = async (req, res) => {
-    const { id } = req.params;
-
+    const id = entero(req.params.id);
     try {
-        const movs = await query(
-            'SELECT COUNT(*)::int AS total FROM movimientos_inventario WHERE insumo_id = $1',
-            [id]
-        );
-
-        if (movs.rows[0].total > 0) {
-            await query('UPDATE insumos SET activo = FALSE WHERE id = $1', [id]);
-            return res.json({
-                mensaje: 'El insumo tiene movimientos registrados, se desactivó para conservar el historial'
+        const i = await query('SELECT nombre, stock_actual FROM insumos WHERE id = $1', [id]);
+        if (!i.rows.length) return res.status(404).json({ mensaje: 'El insumo no existe' });
+        if (i.rows[0].stock_actual > 0) {
+            return res.status(400).json({
+                mensaje: `Aún hay ${i.rows[0].stock_actual} en existencia; regístrelas como salida antes de retirar el insumo`
             });
         }
-
-        const r = await query('DELETE FROM insumos WHERE id = $1 RETURNING nombre', [id]);
-
-        if (r.rows.length === 0) {
-            return res.status(404).json({ mensaje: 'El insumo no existe' });
+        const movs = await query('SELECT COUNT(*)::int AS n FROM movimientos_inventario WHERE insumo_id = $1', [id]);
+        if (movs.rows[0].n > 0) {
+            await query('UPDATE insumos SET activo = FALSE WHERE id = $1', [id]);
+        } else {
+            await query('DELETE FROM insumos WHERE id = $1', [id]);
         }
-
-        res.json({ mensaje: `Insumo ${r.rows[0].nombre} eliminado correctamente` });
-
+        await registrarBitacora({ query }, req.usuario.id, 'retirar', 'insumo', id, { nombre: i.rows[0].nombre });
+        res.json({
+            mensaje: movs.rows[0].n > 0
+                ? `${i.rows[0].nombre} se retiró del catálogo; su historial se conserva`
+                : `${i.rows[0].nombre} se eliminó`
+        });
     } catch (error) {
         console.error('Error al eliminar insumo:', error);
-        res.status(500).json({ mensaje: 'Error al eliminar el insumo' });
+        res.status(500).json({ mensaje: 'Error al retirar el insumo' });
     }
 };
 
 module.exports = {
-    listarInsumos, obtenerAlertas, alertasDetalladas,
-    registrarEntrada, registrarSalida, listarMovimientos,
-    crearInsumo, editarInsumo, eliminarInsumo,
-    movimientosDeInsumo, editarMovimiento, eliminarMovimiento
+    listarInsumos, alertasDetalladas, listarLotes, kardex,
+    registrarEntrada, registrarSalida, eliminarMovimiento, listarMovimientos,
+    crearInsumo, editarInsumo, eliminarInsumo
 };

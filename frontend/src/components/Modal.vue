@@ -47,8 +47,7 @@ watch(() => props.modelValue, (abierto) => {
   position: fixed; inset: 0; z-index: 8000;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
-  background: rgba(15,20,28,.55);
-  backdrop-filter: blur(3px);
+  background: rgba(0,0,0,.5);
 }
 
 .modal-caja {
@@ -56,19 +55,18 @@ watch(() => props.modelValue, (abierto) => {
   max-height: 88vh;
   display: flex; flex-direction: column;
   background: var(--superficie);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-lg);
+  border-radius: var(--radio-xl);
   box-shadow: var(--sombra-lg);
   overflow: hidden;
 }
 
 .modal-cabecera {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 22px;
+  padding: 20px 26px;
   border-bottom: 1px solid var(--borde);
   flex-shrink: 0;
 }
-.modal-cabecera h3 { color: var(--texto); }
+.modal-cabecera h3 { color: var(--texto); font-size: 21px; font-weight: 700; }
 
 .modal-cerrar {
   display: flex; padding: 6px;
@@ -78,12 +76,11 @@ watch(() => props.modelValue, (abierto) => {
 }
 .modal-cerrar:hover { background: var(--superficie-alt); color: var(--texto); }
 
-.modal-cuerpo { padding: 22px; overflow-y: auto; flex: 1; }
+.modal-cuerpo { padding: 24px 26px; overflow-y: auto; flex: 1; }
 
 .modal-acciones {
   display: flex; justify-content: flex-end; gap: 10px;
-  padding: 16px 22px;
-  background: var(--superficie-alt);
+  padding: 18px 26px 14px;
   border-top: 1px solid var(--borde);
   flex-shrink: 0;
 }

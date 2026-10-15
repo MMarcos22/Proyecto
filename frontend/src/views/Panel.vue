@@ -2,324 +2,206 @@
   <div class="animar">
     <div class="titulo-seccion">
       <div>
-        <h1>Panel general</h1>
-        <p class="sub">Resumen de la actividad operativa de la compañía</p>
+        <h1>Resumen del periodo</h1>
+        <p class="sub">Actividad de <strong>{{ describirPeriodo(periodo.desde, periodo.hasta) }}</strong>, comparada con los {{ d?.periodo?.dias || '—' }} días anteriores.</p>
+      </div>
+      <div class="acciones">
+        <SelectorPeriodo v-model="periodo" />
       </div>
     </div>
 
-    <div class="filtro-periodo">
-      <div class="campo">
-        <label>Mes</label>
-        <select v-model="periodo.mes" class="control" @change="cargar">
-          <option value="">Todo el año</option>
-          <option v-for="(m,i) in meses" :key="i" :value="i+1">{{ m }}</option>
-        </select>
-      </div>
-      <div class="campo">
-        <label>Año</label>
-        <select v-model="periodo.anio" class="control" @change="cargar">
-          <option v-for="a in anios" :key="a" :value="a">{{ a }}</option>
-        </select>
-      </div>
+    <div v-if="catalogos.cargado && !catalogos.sectores.length && auth.esAdministrador" class="aviso aviso-alerta mb">
+      <Icono nombre="alerta" />
+      <div><strong>El catálogo de sectores está vacío.</strong> Las boletas exigen un sector y el análisis de zonas depende de él.
+        <router-link to="/catalogos" class="btn-enlace">Cargar sectores</router-link></div>
+    </div>
+    <div v-else-if="d?.resumen?.sin_sector" class="aviso aviso-info mb">
+      <Icono nombre="info" />
+      <div><strong>{{ plural(d.resumen.sin_sector, 'boleta no tiene', 'boletas no tienen') }} sector asignado</strong> en este periodo y no cuentan en el análisis por zona.
+        <router-link v-if="auth.esAdministrador" to="/catalogos?pestana=pendientes" class="btn-enlace">Asignar</router-link></div>
     </div>
 
-    <div v-if="cargando" class="tarjeta estado-carga">
-      <span class="cargador cargador-oscuro"></span>
-      <p>Cargando información</p>
-    </div>
-
-    <template v-else>
-      <!-- ── INDICADORES ──────────────────────── -->
-      <div class="indicadores">
-        <div class="indicador">
-          <div class="ind-icono ind-azul">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
-            </svg>
-          </div>
-          <div>
-            <span class="ind-valor">{{ datos.total_servicios }}</span>
-            <span class="ind-texto">Servicios atendidos</span>
-          </div>
-        </div>
-
-        <div class="indicador">
-          <div class="ind-icono ind-naranja">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-          </div>
-          <div>
-            <span class="ind-valor">{{ datos.insumos_bajo_minimo }}</span>
-            <span class="ind-texto">Insumos bajo el mínimo</span>
-          </div>
-        </div>
-
-        <div class="indicador">
-          <div class="ind-icono ind-rojo">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-            </svg>
-          </div>
-          <div>
-            <span class="ind-valor">{{ datos.insumos_agotados }}</span>
-            <span class="ind-texto">Insumos agotados</span>
-          </div>
-        </div>
-
-        <div class="indicador">
-          <div class="ind-icono ind-verde">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
-            </svg>
-          </div>
-          <div>
-            <span class="ind-valor">{{ datos.servicios_por_zona?.length || 0 }}</span>
-            <span class="ind-texto">Zonas con incidencia</span>
-          </div>
+    <section class="indicadores mb" aria-label="Indicadores del periodo">
+      <div class="indicador">
+        <span class="rotulo">Servicios atendidos</span>
+        <div class="valor">{{ cargando ? '…' : numero(d.resumen.servicios) }}</div>
+        <div class="pie" v-if="!cargando">
+          <span class="delta" :class="variacion(d.resumen.variacion).clase">{{ variacion(d.resumen.variacion).texto }}</span>
+          <span>vs. {{ d.resumen.servicios_anterior }}</span>
         </div>
       </div>
-
-      <div class="columnas">
-        <!-- ── SERVICIOS POR TIPO ─────────────── -->
-        <div class="tarjeta">
-          <div class="tarjeta-cabecera">
-            <h2>Servicios por tipo</h2>
-          </div>
-          <div class="tarjeta-cuerpo">
-            <div v-if="!datos.servicios_por_tipo?.length" class="vacio">
-              <p>Sin registros en el periodo</p>
-            </div>
-            <div v-else class="barras">
-              <div v-for="t in datos.servicios_por_tipo" :key="t.tipo_servicio" class="barra-fila">
-                <div class="barra-etiqueta">
-                  <span class="punto-tipo" :class="`pt-${t.tipo_servicio}`"></span>
-                  <span>{{ nombreTipo(t.tipo_servicio) }}</span>
-                </div>
-                <div class="barra-pista">
-                  <div class="barra-relleno" :class="`br-${t.tipo_servicio}`"
-                       :style="{ width: porcentaje(t.total, maxTipo) + '%' }"></div>
-                </div>
-                <strong class="barra-valor">{{ t.total }}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── ZONAS ──────────────────────────── -->
-        <div class="tarjeta">
-          <div class="tarjeta-cabecera">
-            <h2>Zonas con mayor incidencia</h2>
-          </div>
-          <div class="tarjeta-cuerpo">
-            <div v-if="!datos.servicios_por_zona?.length" class="vacio">
-              <p>Sin registros en el periodo</p>
-            </div>
-            <ol v-else class="lista-zonas">
-              <li v-for="(z,i) in datos.servicios_por_zona" :key="z.zona">
-                <span class="posicion">{{ i + 1 }}</span>
-                <span class="zona-nombre">{{ z.zona }}</span>
-                <span class="etiqueta et-info">{{ z.total }}</span>
-              </li>
-            </ol>
-          </div>
-        </div>
+      <div class="indicador">
+        <span class="rotulo">Tiempo promedio</span>
+        <div class="valor">{{ cargando || d.resumen.minutos_promedio == null ? '—' : d.resumen.minutos_promedio }}<small v-if="d?.resumen?.minutos_promedio != null">min</small></div>
+        <div class="pie">por servicio, salida a entrada</div>
       </div>
+      <div class="indicador">
+        <span class="rotulo">Sectores atendidos</span>
+        <div class="valor">{{ cargando ? '…' : d.resumen.sectores_con_servicio }}</div>
+        <div class="pie">de {{ catalogos.sectores.length }} en el catálogo</div>
+      </div>
+      <router-link to="/inventario?estado=agotado" class="indicador" :class="{ critico: d?.inventario?.agotados }">
+        <span class="rotulo">Insumos agotados</span>
+        <div class="valor">{{ cargando ? '…' : d.inventario.agotados }}</div>
+        <div class="pie">{{ cargando ? '' : `${d.inventario.bajos} más bajo el mínimo` }}</div>
+      </router-link>
+      <router-link to="/lotes?estado=vencidos" class="indicador" :class="{ critico: d?.inventario?.lotes_vencidos, atencion: !d?.inventario?.lotes_vencidos && d?.inventario?.lotes_por_vencer }">
+        <span class="rotulo">Lotes vencidos</span>
+        <div class="valor">{{ cargando ? '…' : d.inventario.lotes_vencidos }}</div>
+        <div class="pie">{{ cargando ? '' : `${d.inventario.lotes_por_vencer} vencen en 30 días` }}</div>
+      </router-link>
+    </section>
 
-      <!-- ── ALERTAS ────────────────────────────── -->
-      <div v-if="alertas.existencia_critica.length" class="tarjeta">
+    <div class="rejilla-panel">
+      <section class="tarjeta area-dias">
         <div class="tarjeta-cabecera">
-          <h2>Insumos que requieren atención</h2>
-          <router-link to="/inventario" class="btn btn-plano btn-sm">Ver inventario</router-link>
+          <h3>Servicios por día</h3>
+          <span class="nota mono">{{ fechaCorta(periodo.desde) }} – {{ fechaCorta(periodo.hasta) }}</span>
         </div>
-        <div class="tabla-contenedor sin-borde">
-          <table>
-            <thead>
-              <tr><th>Insumo</th><th>Categoría</th><th>Existencia</th><th>Mínimo</th><th>Estado</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="a in alertas.existencia_critica.slice(0,8)" :key="a.id">
-                <td>{{ a.nombre }}</td>
-                <td class="capitalizar">{{ a.categoria }}</td>
-                <td><strong>{{ a.stock_actual }}</strong></td>
-                <td>{{ a.stock_minimo }}</td>
-                <td>
-                  <span class="etiqueta" :class="a.estado === 'agotado' ? 'et-peligro' : 'et-alerta'">
-                    {{ a.estado === 'agotado' ? 'Agotado' : 'Existencia baja' }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="tarjeta-cuerpo">
+          <div v-if="cargando" class="esqueleto" style="height:200px"></div>
+          <ColumnasApiladas v-else :datos="serieDiaria" :series="[{ clave: 'total', nombre: 'Servicios', color: 'var(--acento)' }]"
+                            :alto="200" descripcion="Servicios atendidos por día" />
         </div>
-      </div>
-    </template>
+      </section>
+
+      <section class="tarjeta area-tipos">
+        <div class="tarjeta-cabecera"><h3>Por tipo de servicio</h3><span class="nota">vs. periodo anterior</span></div>
+        <div class="tarjeta-cuerpo">
+          <div v-if="cargando" class="esqueleto" style="height:150px"></div>
+          <div v-else-if="!d.por_tipo.length" class="vacio"><p>Sin servicios en el periodo</p></div>
+          <BarrasH v-else :items="barrasTipo" descripcion="Servicios por tipo" />
+        </div>
+      </section>
+
+      <section class="tarjeta area-sectores">
+        <div class="tarjeta-cabecera">
+          <h3>Sectores con mayor incidencia</h3>
+          <router-link v-if="auth.esAdministrador" to="/servicios" class="btn btn-plano btn-sm">Ver análisis <Icono nombre="flecha_der" :tam="13" /></router-link>
+        </div>
+        <div class="tarjeta-cuerpo">
+          <div v-if="cargando" class="esqueleto" style="height:150px"></div>
+          <div v-else-if="!d.por_sector.length" class="vacio"><p>Sin servicios en el periodo</p></div>
+          <BarrasH v-else :items="barrasSector" descripcion="Servicios por sector" />
+          <p v-if="!cargando && d.por_sector.length" class="nota-color">El color indica el tipo de servicio que predomina en el sector.</p>
+        </div>
+      </section>
+
+      <section class="tarjeta area-recientes">
+        <div class="tarjeta-cabecera">
+          <h3>Últimos servicios</h3>
+          <router-link to="/historial" class="btn btn-plano btn-sm">Historial <Icono nombre="flecha_der" :tam="13" /></router-link>
+        </div>
+        <div v-if="!cargando && !d.recientes.length" class="vacio">
+          <strong>Aún no hay boletas</strong>
+          <router-link to="/registrar" class="btn btn-rojo btn-sm"><Icono nombre="mas" :tam="14" />Registrar la primera</router-link>
+        </div>
+        <ul v-else class="recientes">
+          <li v-for="r in d?.recientes || []" :key="r.id">
+            <router-link :to="`/historial/${r.id}`">
+              <span class="principal-r">
+                <span class="tipo" :class="`tipo-${r.tipo_servicio}`">{{ corteTipo(r.tipo_servicio) }}</span>
+                <span class="sector-r">{{ r.sector || 'Sin sector' }}</span>
+              </span>
+              <span class="lado-r">
+                <span class="mono control-n">{{ r.numero_control }}</span>
+                <span class="mono fecha-r">{{ fechaCorta(r.fecha) }} {{ r.hora_salida ? hora(r.hora_salida) : '' }}</span>
+              </span>
+            </router-link>
+          </li>
+        </ul>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
-import { reportes, inventario } from '../services/api';
+import { ref, computed, watch, onMounted } from 'vue';
+import { reportes, mensajeError } from '../services/api';
+import { useAuthStore } from '../stores/auth';
+import { useCatalogosStore, corteTipo, colorTipo, nombreTipo } from '../stores/catalogos';
 import { useNotificacionesStore } from '../stores/notificaciones';
+import { periodosRapidos, describirPeriodo, numero, plural, variacion, fechaCorta, hora } from '../utils/formato';
+import SelectorPeriodo from '../components/SelectorPeriodo.vue';
+import ColumnasApiladas from '../components/graficos/ColumnasApiladas.vue';
+import BarrasH from '../components/graficos/BarrasH.vue';
+import Icono from '../components/Icono.vue';
 
+const auth = useAuthStore();
+const catalogos = useCatalogosStore();
 const notif = useNotificacionesStore();
 
-const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-
-const anioActual = new Date().getFullYear();
-const anios = [anioActual, anioActual - 1, anioActual - 2];
-
-const periodo = reactive({ mes: new Date().getMonth() + 1, anio: anioActual });
-const datos    = ref({});
-const alertas  = ref({ existencia_critica: [], proximos_a_vencer: [] });
+const { desde, hasta } = periodosRapidos()[0];
+const periodo = ref({ desde, hasta });
+const d = ref(null);
 const cargando = ref(true);
 
-const NOMBRES = {
-  ambulancia: 'Ambulancia', incendio: 'Incendio', rescate: 'Rescate',
-  varios: 'Servicios varios', agua: 'Servicio de agua'
-};
-const nombreTipo = (t) => NOMBRES[t] || t;
+const serieDiaria = computed(() => {
+  const dias = d.value?.por_dia || [];
+  const cada = dias.length > 62 ? 14 : dias.length > 31 ? 7 : dias.length > 16 ? 3 : 1;
+  return dias.map((x, i) => ({
+    clave: x.fecha,
+    etiqueta: i % cada === 0 ? String(Number(x.fecha.slice(8))) : '',
+    detalle: fechaCorta(x.fecha),
+    valores: { total: x.total }
+  }));
+});
 
-const maxTipo = computed(() =>
-  Math.max(...(datos.value.servicios_por_tipo?.map(t => t.total) || [1]), 1)
-);
-const porcentaje = (v, max) => Math.round((v / max) * 100);
+const barrasTipo = computed(() => d.value.por_tipo.map(t => ({
+  clave: t.tipo_servicio, etiqueta: nombreTipo(t.tipo_servicio), valor: t.total,
+  color: colorTipo(t.tipo_servicio), secundario: variacion(t.variacion).texto,
+  to: `/historial?tipo_servicio=${t.tipo_servicio}&desde=${periodo.value.desde}&hasta=${periodo.value.hasta}`
+})));
+
+const barrasSector = computed(() => d.value.por_sector.map(s => ({
+  clave: s.sector_id ?? 'sin', etiqueta: s.sector, valor: s.total, color: colorTipo(s.tipo_predominante),
+  to: s.sector_id ? `/historial?sector_id=${s.sector_id}&desde=${periodo.value.desde}&hasta=${periodo.value.hasta}` : null
+})));
 
 const cargar = async () => {
   cargando.value = true;
   try {
-    const params = { anio: periodo.anio };
-    if (periodo.mes) params.mes = periodo.mes;
-
-    const [est, alr] = await Promise.all([
-      reportes.estadisticas(params),
-      inventario.alertas()
-    ]);
-    datos.value   = est.data;
-    alertas.value = alr.data;
-  } catch {
-    notif.error('No se pudo cargar la información del panel');
+    const { data } = await reportes.panel(periodo.value);
+    d.value = data;
+  } catch (e) {
+    notif.error(mensajeError(e, 'No se pudo cargar el panel'));
   } finally {
     cargando.value = false;
   }
 };
 
+watch(periodo, cargar);
 onMounted(cargar);
 </script>
 
 <style scoped>
-.filtro-periodo {
-  display: flex; gap: 12px; margin-bottom: 20px;
+.rejilla-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 16px;
 }
-.filtro-periodo .campo { margin-bottom: 0; min-width: 150px; }
+.area-dias { grid-column: 1; }
+.area-tipos { grid-column: 2; }
+.area-sectores { grid-column: 1; }
+.area-recientes { grid-column: 2; }
 
-.estado-carga {
-  display: flex; flex-direction: column; align-items: center; gap: 13px; padding: 56px;
-}
-.estado-carga p { color: var(--texto-suave); font-size: 13.5px; }
+.nota-color { margin-top: 14px; font-size: 11.5px; color: var(--texto-tenue); }
 
-/* ── INDICADORES ──────────────────────────────── */
-.indicadores {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 14px; margin-bottom: 20px;
+.recientes { list-style: none; }
+.recientes li + li { border-top: 1px solid var(--borde); }
+.recientes a {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 11px 20px; text-decoration: none; font-size: 14px;
 }
-.indicador {
-  display: flex; align-items: center; gap: 14px;
-  padding: 18px 20px;
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-lg);
-  box-shadow: var(--sombra-sm);
-  transition: transform var(--transicion), box-shadow var(--transicion);
-}
-.indicador:hover { transform: translateY(-2px); box-shadow: var(--sombra); }
-
-.ind-icono {
-  width: 44px; height: 44px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 12px;
-}
-.ind-azul   { background: var(--info-fondo);    color: var(--info); }
-.ind-naranja{ background: var(--alerta-fondo);  color: var(--alerta); }
-.ind-rojo   { background: var(--peligro-fondo); color: var(--peligro); }
-.ind-verde  { background: var(--exito-fondo);   color: var(--exito); }
-
-.ind-valor {
-  display: block; font-size: 25px; font-weight: 700;
-  line-height: 1.1; letter-spacing: -.02em;
-}
-.ind-texto { font-size: 12.5px; color: var(--texto-suave); }
-
-/* ── COLUMNAS ─────────────────────────────────── */
-.columnas {
-  display: grid; grid-template-columns: 1.3fr 1fr;
-  gap: 16px; margin-bottom: 20px;
-}
-
-/* ── BARRAS ───────────────────────────────────── */
-.barras { display: flex; flex-direction: column; gap: 15px; }
-.barra-fila {
-  display: grid; grid-template-columns: 145px 1fr 36px;
-  align-items: center; gap: 12px;
-}
-.barra-etiqueta {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; color: var(--texto);
-}
-.punto-tipo { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.pt-ambulancia { background: #1565C0; }
-.pt-incendio   { background: #C62828; }
-.pt-rescate    { background: #F57C00; }
-.pt-varios     { background: #2E7D32; }
-.pt-agua       { background: #00838F; }
-
-.barra-pista {
-  height: 9px; background: var(--superficie-alt);
-  border-radius: 99px; overflow: hidden;
-}
-.barra-relleno {
-  height: 100%; border-radius: 99px;
-  transition: width 600ms cubic-bezier(.4,0,.2,1);
-}
-.br-ambulancia { background: #1565C0; }
-.br-incendio   { background: #C62828; }
-.br-rescate    { background: #F57C00; }
-.br-varios     { background: #2E7D32; }
-.br-agua       { background: #00838F; }
-
-.barra-valor { font-size: 14px; text-align: right; }
-
-/* ── ZONAS ────────────────────────────────────── */
-.lista-zonas { list-style: none; display: flex; flex-direction: column; gap: 9px; }
-.lista-zonas li {
-  display: flex; align-items: center; gap: 11px;
-  padding: 9px 11px;
-  background: var(--superficie-alt);
-  border-radius: var(--radio);
-}
-.posicion {
-  width: 22px; height: 22px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--superficie); border: 1px solid var(--borde);
-  border-radius: 50%;
-  font-size: 11px; font-weight: 700; color: var(--texto-suave);
-}
-.zona-nombre {
-  flex: 1; font-size: 13px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
-.capitalizar { text-transform: capitalize; }
-.tabla-contenedor.sin-borde { border: none; border-radius: 0; }
+.principal-r, .lado-r { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lado-r { align-items: flex-end; }
+.recientes a:hover { background: var(--superficie-alt); }
+.control-n { font-size: 13px; font-weight: 600; }
+.sector-r { color: var(--texto-suave); font-size: 13.5px; }
+.fecha-r { font-size: 11.5px; color: var(--texto-tenue); }
 
 @media (max-width: 1100px) {
-  .indicadores { grid-template-columns: repeat(2, 1fr); }
-  .columnas { grid-template-columns: 1fr; }
-}
-@media (max-width: 560px) {
-  .indicadores { grid-template-columns: 1fr; }
-  .barra-fila { grid-template-columns: 110px 1fr 32px; }
+  .rejilla-panel { grid-template-columns: 1fr; }
+  .rejilla-panel > * { grid-column: 1 !important; }
 }
 </style>

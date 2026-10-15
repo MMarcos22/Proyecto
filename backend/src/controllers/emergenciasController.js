@@ -1,4 +1,19 @@
+// Boletas de servicio (Objetivo específico 1).
+// Ciclo de vida: en_curso → pendiente → completa → firmada (o anulada).
+//   · La boleta nace en cabina al recibir la llamada, todavía sin número.
+//   · Al registrar el regreso de la unidad recibe el número de control, en el
+//     orden en que regresan las unidades y correlativo por tipo (regla de la
+//     capital; entrevista 57:00). Así nadie reserva números ni escribe encima.
+//   · Solo la tripulación completa su boleta, identificándose con su PIN.
+//   · Para completarla no puede quedar ningún campo en blanco: cada uno lleva
+//     un valor o "No aplica" (entrevista 54:22).
+//   · La administración la marca como firmada en la revisión diaria; desde
+//     entonces no se edita, solo se anula con motivo.
+const bcrypt = require('bcrypt');
 const { query, getClient } = require('../config/database');
+const { SUBTIPOS, CAMPOS_BOLETA, PREFIJOS_CONTROL } = require('../config/dominio');
+const { registrarBitacora, entero, contable, FECHA_ISO, hoyGuatemala } = require('../utils/comun');
+const { ErrorNegocio, anularMovimiento } = require('../services/inventarioService');
 
 const TABLAS_DETALLE = {
     ambulancia: 'detalle_ambulancia',
@@ -22,94 +37,458 @@ const CAMPOS_DETALLE = {
         'donativo', 'donativo_letras']
 };
 
-const CAMPOS_BASE = ['numero_control', 'tipo_servicio', 'fecha', 'minutos_trabajados',
-    'solicitud_por_telefono', 'personal', 'salida_de', 'hora_salida', 'entrada_a', 'hora_entrada',
+// Campos de la boleta que se guardan en la tabla principal (el número no: lo asigna el regreso)
+const CAMPOS_BASE = ['tipo_servicio', 'fecha', 'minutos_trabajados',
+    'solicitud_por_telefono', 'personal', 'salida_de', 'hora_aviso', 'hora_salida', 'entrada_a', 'hora_entrada',
     'direccion', 'zona', 'solicitante', 'radiotelefonista', 'piloto', 'unidad', 'personal_destacado',
     'observaciones', 'reporte_formulado_por', 'conforme_piloto', 'vobo_jefe_servicio',
-    'responsable', 'jefes_servicio', 'copia_certificada_a', 'fecha_certificacion'];
+    'responsable', 'jefes_servicio', 'copia_certificada_a', 'fecha_certificacion',
+    'sector_id', 'lugar_critico_id', 'unidad_id', 'piloto_id', 'subtipo'];
 
-// ── REGISTRAR ────────────────────────────────────
+const EDITABLES = new Set(['en_curso', 'pendiente', 'completa']);
+const HORA = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+
+const limpiar = (v) => (v === '' || v === undefined ? null : v);
+const vacio = (v) => v === null || v === undefined || String(v).trim() === '';
+
+// Minutos entre salida y entrada; si la entrada es menor se asume que cruzó la medianoche
+const minutosEntre = (salida, entrada) => {
+    if (!salida || !entrada) return null;
+    const [hs, ms] = salida.split(':').map(Number);
+    const [he, me] = entrada.split(':').map(Number);
+    let m = (he * 60 + me) - (hs * 60 + ms);
+    if (m < 0) m += 1440;
+    return m;
+};
+
+const horaGuatemala = () => new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(11, 16);
+
+// Lo mínimo para abrir una boleta en cabina: tipo, dirección y hora de salida
+const validarInicio = (b) => {
+    if (!TABLAS_DETALLE[b.tipo_servicio]) return 'Tipo de servicio no válido';
+    if (!b.fecha || !FECHA_ISO.test(b.fecha)) return 'La fecha del servicio es obligatoria';
+    if (b.fecha > hoyGuatemala()) return 'La fecha del servicio no puede ser futura';
+    if (!b.direccion?.toString().trim()) return 'La dirección es obligatoria';
+    for (const h of ['hora_aviso', 'hora_salida', 'hora_entrada']) {
+        if (b[h] && !HORA.test(b[h])) return 'Hora con formato inválido (use HH:MM entre 00:00 y 23:59)';
+    }
+    if (b.subtipo && !SUBTIPOS[b.tipo_servicio][b.subtipo]) return 'Causa no válida para este tipo de servicio';
+    return null;
+};
+
+// Lo que impide completar la boleta: sector, causa y cada campo de la boleta oficial
+// sin valor ni "No aplica". Se evalúa sobre la fila guardada (base + detalle).
+const faltantes = (fila) => {
+    const noAplica = new Set(Array.isArray(fila.no_aplica) ? fila.no_aplica : []);
+    const lista = [];
+    if (!fila.sector_id) lista.push({ clave: 'sector_id', etiqueta: 'Sector del municipio', admiteNoAplica: false });
+    if (!fila.subtipo) lista.push({ clave: 'subtipo', etiqueta: 'Causa del servicio', admiteNoAplica: false });
+    if (!fila.numero_control) lista.push({ clave: 'regreso', etiqueta: 'Registrar el regreso de la unidad', admiteNoAplica: false });
+    for (const campo of CAMPOS_BOLETA[fila.tipo_servicio] || []) {
+        if (noAplica.has(campo.clave)) continue;
+        if (campo.campos.some(c => !vacio(fila[c]))) continue;
+        lista.push({ clave: campo.clave, etiqueta: campo.etiqueta, admiteNoAplica: true });
+    }
+    return lista;
+};
+
+// Completa textos de la boleta con los catálogos y calcula los minutos
+const prepararBase = async (db, b) => {
+    const datos = { ...b };
+    datos.minutos_trabajados = minutosEntre(datos.hora_salida, datos.hora_entrada);
+    if (datos.sector_id) {
+        const sector = await db.query('SELECT nombre FROM sectores WHERE id = $1', [datos.sector_id]);
+        if (!sector.rows.length) throw new ErrorNegocio('El sector seleccionado no existe');
+        datos.zona = sector.rows[0].nombre;
+    }
+    if (datos.unidad_id) {
+        const u = await db.query('SELECT codigo FROM unidades WHERE id = $1', [datos.unidad_id]);
+        if (u.rows.length) datos.unidad = u.rows[0].codigo;
+    }
+    if (datos.piloto_id) {
+        const p = await db.query('SELECT nombre_completo FROM personal WHERE id = $1', [datos.piloto_id]);
+        if (p.rows.length) datos.piloto = p.rows[0].nombre_completo;
+    }
+    datos.no_aplica = Array.isArray(b.no_aplica) ? [...new Set(b.no_aplica.map(String))] : [];
+    return datos;
+};
+
+// Guarda la tripulación y escribe sus nombres en el campo "personal" de la boleta oficial
+const guardarTripulacion = async (db, id, ids) => {
+    if (!Array.isArray(ids)) return null;
+    const lista = [...new Set(ids.map(entero).filter(Boolean))];
+    await db.query('DELETE FROM boleta_tripulacion WHERE emergencia_id = $1', [id]);
+    if (!lista.length) return '';
+    await db.query(`
+    INSERT INTO boleta_tripulacion (emergencia_id, personal_id)
+    SELECT $1, unnest($2::int[]) ON CONFLICT DO NOTHING`, [id, lista]);
+    const r = await db.query(
+        'SELECT nombre_completo FROM personal WHERE id = ANY($1::int[]) ORDER BY nombre_completo', [lista]);
+    return r.rows.map(x => x.nombre_completo).join('; ');
+};
+
+const escribirDetalle = async (db, id, b) => {
+    const campos = CAMPOS_DETALLE[b.tipo_servicio];
+    await db.query(`DELETE FROM ${TABLAS_DETALLE[b.tipo_servicio]} WHERE emergencia_id = $1`, [id]);
+    await db.query(
+        `INSERT INTO ${TABLAS_DETALLE[b.tipo_servicio]} (emergencia_id, ${campos.join(', ')})
+     VALUES ($1, ${campos.map((_, i) => `$${i + 2}`).join(', ')})`,
+        [id, ...campos.map(c => limpiar(b[c]))]);
+};
+
+const leerFila = async (db, id) => {
+    const e = await db.query('SELECT * FROM emergencias WHERE id = $1', [id]);
+    if (!e.rows.length) return null;
+    const fila = e.rows[0];
+    const det = await db.query(`SELECT * FROM ${TABLAS_DETALLE[fila.tipo_servicio]} WHERE emergencia_id = $1`, [id]);
+    return { ...(det.rows[0] || {}), ...fila };
+};
+
+// Asigna el siguiente número de control del tipo, en el orden en que se registra
+// el regreso. El candado evita que dos regresos simultáneos tomen el mismo número.
+const asignarNumero = async (db, id) => {
+    const e = await db.query('SELECT tipo_servicio, fecha, secuencia FROM emergencias WHERE id = $1 FOR UPDATE', [id]);
+    const { tipo_servicio: tipo, fecha, secuencia } = e.rows[0];
+    if (secuencia) return null;
+    const anio = Number(String(fecha instanceof Date ? fecha.toISOString() : fecha).slice(0, 4));
+    await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`control-${tipo}-${anio}`]);
+    const r = await db.query(`
+    SELECT COALESCE(MAX(secuencia), 0) + 1 AS n FROM emergencias
+    WHERE tipo_servicio = $1 AND anio_secuencia = $2`, [tipo, anio]);
+    const n = r.rows[0].n;
+    const numero = `${PREFIJOS_CONTROL[tipo]}-${anio}-${String(n).padStart(4, '0')}`;
+    await db.query(`
+    UPDATE emergencias SET secuencia = $1, anio_secuencia = $2, numero_control = $3,
+           regreso_en = CURRENT_TIMESTAMP, estado = 'pendiente'
+    WHERE id = $4`, [n, anio, numero, id]);
+    return numero;
+};
+
+// ¿Quién puede editar? En curso: cabina. Pendiente o completa: un miembro de la
+// tripulación con su PIN, o la administración (queda en la bitácora).
+const verificarAutoria = async (db, req, id, estado) => {
+    if (req.usuario.rol === 'administrador') return { via: 'administracion' };
+    if (estado === 'en_curso') return { via: 'cabina' };
+    const { personal_id, pin } = req.body?.autor || {};
+    if (!personal_id || !pin) {
+        throw new ErrorNegocio('Identifíquese con su PIN: solo la tripulación de este servicio puede completar la boleta', 403);
+    }
+    const r = await db.query(`
+    SELECT p.nombre_completo, p.pin_hash,
+           EXISTS (SELECT 1 FROM boleta_tripulacion t WHERE t.emergencia_id = $1 AND t.personal_id = p.id) AS en_tripulacion
+    FROM personal p WHERE p.id = $2 AND p.activo`, [id, entero(personal_id)]);
+    const p = r.rows[0];
+    if (!p?.pin_hash || !(await bcrypt.compare(String(pin), p.pin_hash))) throw new ErrorNegocio('El PIN no es correcto', 403);
+    if (!p.en_tripulacion) throw new ErrorNegocio(`${p.nombre_completo} no está en la tripulación de este servicio`, 403);
+    return { via: 'tripulacion', nombre: p.nombre_completo, personal_id: entero(personal_id) };
+};
+
+const responderError = (res, error, contexto) => {
+    if (error instanceof ErrorNegocio) return res.status(error.estado).json({ mensaje: error.message });
+    if (error.code === '23505') return res.status(409).json({ mensaje: 'El número de control ya existe; intente de nuevo' });
+    if (['22007', '22008', '22P02', '22003'].includes(error.code)) return res.status(400).json({ mensaje: 'Hay un dato con formato inválido en la boleta' });
+    console.error(contexto, error);
+    res.status(500).json({ mensaje: 'Ocurrió un error al procesar la boleta' });
+};
+
+// Uso de insumos en el servicio. No descuenta de bodega: el material ya salió
+// por vale hacia la escuadra (entrevista 00:42); este registro alimenta el
+// consumo por tipo, causa y sector.
+const registrarUso = async (db, id, item, usuarioId) => {
+    const cantidad = Number(item.cantidad);
+    if (!Number.isInteger(cantidad) || cantidad <= 0) throw new ErrorNegocio('La cantidad debe ser un número entero mayor que cero');
+    const i = await db.query('SELECT nombre, clase FROM insumos WHERE id = $1 AND activo', [entero(item.insumo_id)]);
+    if (!i.rows.length) throw new ErrorNegocio('El insumo no existe', 404);
+    if (i.rows[0].clase === 'equipo') throw new ErrorNegocio(`${i.rows[0].nombre} es equipo: no se consume en un servicio`);
+    await db.query('INSERT INTO consumos_servicio (emergencia_id, insumo_id, cantidad, usuario_id) VALUES ($1, $2, $3, $4)',
+        [id, entero(item.insumo_id), cantidad, usuarioId]);
+    return i.rows[0].nombre;
+};
+
+const registrarInsumos = async (db, id, fecha, insumos, usuarioId) => {
+    for (const item of (Array.isArray(insumos) ? insumos : []).filter(i => i.insumo_id && i.cantidad)) {
+        await registrarUso(db, id, item, usuarioId);
+    }
+    return [];
+};
+
+// ── REGISTRAR LLAMADA ────────────────────────────
+// Abre la boleta en curso. Si la unidad ya regresó (registro posterior), se
+// registra el regreso en el mismo acto y la boleta recibe su número.
 const registrar = async (req, res) => {
-    const { tipo_servicio } = req.body;
-
-    if (!TABLAS_DETALLE[tipo_servicio]) {
-        return res.status(400).json({ mensaje: 'Tipo de servicio no válido' });
-    }
-    if (!req.body.numero_control || !req.body.fecha || !req.body.direccion) {
-        return res.status(400).json({
-            mensaje: 'El número de control, la fecha y la dirección son obligatorios'
-        });
-    }
+    const error = validarInicio(req.body);
+    if (error) return res.status(400).json({ mensaje: error });
 
     const cliente = await getClient();
-
     try {
         await cliente.query('BEGIN');
+        const b = await prepararBase(cliente, req.body);
+        const turno = await cliente.query('SELECT id FROM turnos WHERE fin IS NULL LIMIT 1');
 
-        const valoresBase = CAMPOS_BASE.map(c => req.body[c] ?? null);
-        valoresBase.push(req.usuario.id);
+        const valores = CAMPOS_BASE.map(c => limpiar(b[c]));
+        valores.push(JSON.stringify(b.no_aplica), req.usuario.id, turno.rows[0]?.id ?? null);
+        const n = CAMPOS_BASE.length;
+        const ins = await cliente.query(`
+      INSERT INTO emergencias (${CAMPOS_BASE.join(', ')}, no_aplica, usuario_id, turno_id, estado)
+      VALUES (${CAMPOS_BASE.map((_, i) => `$${i + 1}`).join(', ')}, $${n + 1}, $${n + 2}, $${n + 3}, 'en_curso')
+      RETURNING id`, valores);
+        const id = ins.rows[0].id;
 
-        const marcadores = CAMPOS_BASE.map((_, i) => `$${i + 1}`).join(', ');
-        const sqlBase = `
-      INSERT INTO emergencias (${CAMPOS_BASE.join(', ')}, usuario_id)
-      VALUES (${marcadores}, $${CAMPOS_BASE.length + 1})
-      RETURNING id, numero_control, tipo_servicio, fecha`;
+        await escribirDetalle(cliente, id, b);
+        const personal = await guardarTripulacion(cliente, id, req.body.tripulacion);
+        if (personal !== null) await cliente.query('UPDATE emergencias SET personal = $1 WHERE id = $2', [personal, id]);
 
-        const insercion = await cliente.query(sqlBase, valoresBase);
-        const emergencia = insercion.rows[0];
-
-        const campos = CAMPOS_DETALLE[tipo_servicio];
-        const valoresDetalle = [emergencia.id, ...campos.map(c => req.body[c] ?? null)];
-        const marcadoresDet = campos.map((_, i) => `$${i + 2}`).join(', ');
-
-        await cliente.query(
-            `INSERT INTO ${TABLAS_DETALLE[tipo_servicio]} (emergencia_id, ${campos.join(', ')})
-       VALUES ($1, ${marcadoresDet})`,
-            valoresDetalle
-        );
-
-        await cliente.query('COMMIT');
-        res.status(201).json({ mensaje: 'Servicio registrado correctamente', emergencia });
-
-    } catch (error) {
-        await cliente.query('ROLLBACK');
-        if (error.code === '23505') {
-            return res.status(409).json({ mensaje: 'El número de control ya existe' });
+        let numero = null;
+        if (req.body.regreso) {
+            if (!b.hora_entrada) await cliente.query('UPDATE emergencias SET hora_entrada = $1 WHERE id = $2', [horaGuatemala(), id]);
+            numero = await asignarNumero(cliente, id);
         }
-        console.error('Error al registrar servicio:', error);
-        res.status(500).json({ mensaje: 'Error al registrar el servicio' });
+        const alertas = await registrarInsumos(cliente, id, b.fecha, req.body.insumos, req.usuario.id);
+
+        await registrarBitacora(cliente, req.usuario.id, 'crear', 'emergencia', id,
+            { numero_control: numero, regreso: !!req.body.regreso });
+        await cliente.query('COMMIT');
+
+        const fila = await leerFila({ query }, id);
+        res.status(201).json({
+            mensaje: numero ? `Boleta ${numero} registrada; complétela cuando pueda` : 'La unidad salió; registre el regreso cuando vuelva',
+            emergencia: { id, numero_control: numero, estado: fila.estado, tipo_servicio: fila.tipo_servicio },
+            faltantes: faltantes(fila), alertas
+        });
+    } catch (e) {
+        await cliente.query('ROLLBACK');
+        responderError(res, e, 'Error al registrar servicio:');
     } finally {
         cliente.release();
     }
 };
 
-// ── LISTAR CON FILTROS ───────────────────────────
+// ── REGISTRAR REGRESO: aquí se asigna el número ──
+const registrarRegreso = async (req, res) => {
+    const id = entero(req.params.id);
+    const hora = req.body?.hora_entrada || horaGuatemala();
+    if (!HORA.test(hora)) return res.status(400).json({ mensaje: 'Hora de regreso no válida' });
+
+    const cliente = await getClient();
+    try {
+        await cliente.query('BEGIN');
+        const e = await cliente.query('SELECT estado, hora_salida FROM emergencias WHERE id = $1 FOR UPDATE', [id]);
+        if (!e.rows.length) throw new ErrorNegocio('Servicio no encontrado', 404);
+        if (e.rows[0].estado !== 'en_curso') throw new ErrorNegocio('El regreso de esta unidad ya se registró');
+        const salida = e.rows[0].hora_salida ? String(e.rows[0].hora_salida).slice(0, 5) : null;
+        await cliente.query('UPDATE emergencias SET hora_entrada = $1, minutos_trabajados = $2 WHERE id = $3',
+            [hora, minutosEntre(salida, hora.slice(0, 5)), id]);
+        const numero = await asignarNumero(cliente, id);
+        await registrarBitacora(cliente, req.usuario.id, 'regreso', 'emergencia', id, { numero_control: numero, hora_entrada: hora });
+        await cliente.query('COMMIT');
+        res.json({ mensaje: `La unidad regresó. Boleta ${numero}`, numero_control: numero });
+    } catch (err) {
+        await cliente.query('ROLLBACK');
+        responderError(res, err, 'Error al registrar regreso:');
+    } finally {
+        cliente.release();
+    }
+};
+
+// ── GUARDAR (y completar) ────────────────────────
+const guardar = async (req, res) => {
+    const id = entero(req.params.id);
+    const error = validarInicio(req.body);
+    if (error) return res.status(400).json({ mensaje: error });
+
+    const cliente = await getClient();
+    try {
+        await cliente.query('BEGIN');
+        const previo = await cliente.query('SELECT * FROM emergencias WHERE id = $1 FOR UPDATE', [id]);
+        if (!previo.rows.length) throw new ErrorNegocio('Servicio no encontrado', 404);
+        const antes = previo.rows[0];
+        if (!EDITABLES.has(antes.estado)) {
+            throw new ErrorNegocio(antes.estado === 'firmada'
+                ? 'La boleta ya está firmada y no se puede modificar; si tiene un error, anúlela con motivo'
+                : 'La boleta está anulada');
+        }
+        if (antes.tipo_servicio !== req.body.tipo_servicio) {
+            throw new ErrorNegocio('El tipo de servicio no se puede cambiar; anule la boleta y registre una nueva');
+        }
+        const autoria = await verificarAutoria(cliente, req, id, antes.estado);
+
+        const b = await prepararBase(cliente, req.body);
+        const campos = CAMPOS_BASE.filter(c => c !== 'tipo_servicio');
+        // Si el regreso ya se registró, la hora de entrada solo se corrige, no se borra
+        if (antes.secuencia && !b.hora_entrada) b.hora_entrada = antes.hora_entrada;
+        b.minutos_trabajados = minutosEntre(b.hora_salida?.slice(0, 5), b.hora_entrada ? String(b.hora_entrada).slice(0, 5) : null);
+        const valores = campos.map(c => limpiar(b[c]));
+        valores.push(JSON.stringify(b.no_aplica), req.usuario.id, id);
+        await cliente.query(`
+      UPDATE emergencias SET ${campos.map((c, i) => `${c} = $${i + 1}`).join(', ')},
+        no_aplica = $${campos.length + 1}, actualizado_por = $${campos.length + 2}, actualizado_en = CURRENT_TIMESTAMP
+      WHERE id = $${campos.length + 3}`, valores);
+        await escribirDetalle(cliente, id, b);
+        const personal = await guardarTripulacion(cliente, id, req.body.tripulacion);
+        if (personal !== null) await cliente.query('UPDATE emergencias SET personal = $1 WHERE id = $2', [personal, id]);
+
+        // Estado resultante: completa solo si no falta nada y se pidió completar
+        const fila = await leerFila(cliente, id);
+        const falta = faltantes(fila);
+        let estado = antes.estado;
+        if (antes.estado !== 'en_curso') {
+            if (falta.length) estado = 'pendiente';
+            else if (req.body.completar || antes.estado === 'completa') estado = 'completa';
+        }
+        if (req.body.completar && falta.length) {
+            throw new ErrorNegocio(`Falta: ${falta.map(f => f.etiqueta.toLowerCase()).slice(0, 4).join(', ')}${falta.length > 4 ? '…' : ''}`);
+        }
+        if (estado !== antes.estado) {
+            await cliente.query(`UPDATE emergencias SET estado = $1, completada_en = ${estado === 'completa' ? 'CURRENT_TIMESTAMP' : 'NULL'} WHERE id = $2`, [estado, id]);
+        }
+
+        // Solo se guardan en bitácora los campos que cambiaron
+        const cambios = {};
+        for (const c of campos) {
+            const a = antes[c] == null ? null : String(antes[c]);
+            const n = limpiar(b[c]) == null ? null : String(b[c]);
+            if (a !== n && !(c.startsWith('hora_') && a?.slice(0, 5) === n?.slice(0, 5))) cambios[c] = { antes: a, despues: n };
+        }
+        await registrarBitacora(cliente, req.usuario.id, estado === 'completa' && antes.estado !== 'completa' ? 'completar' : 'editar',
+            'emergencia', id, { ...cambios, _por: autoria });
+
+        await cliente.query('COMMIT');
+        res.json({
+            mensaje: estado === 'completa' ? 'Boleta completa; ya se puede imprimir' : 'Cambios guardados',
+            estado, faltantes: falta
+        });
+    } catch (e) {
+        await cliente.query('ROLLBACK');
+        responderError(res, e, 'Error al guardar boleta:');
+    } finally {
+        cliente.release();
+    }
+};
+
+// ── VERIFICAR PIN (para abrir la pantalla de completar) ─
+const verificarPin = async (req, res) => {
+    const id = entero(req.params.id);
+    try {
+        const e = await query('SELECT estado FROM emergencias WHERE id = $1', [id]);
+        if (!e.rows.length) return res.status(404).json({ mensaje: 'Servicio no encontrado' });
+        const autoria = await verificarAutoria({ query }, req, id, e.rows[0].estado);
+        res.json(autoria);
+    } catch (err) {
+        responderError(res, err, 'Error al verificar PIN:');
+    }
+};
+
+// ── FIRMAR (revisión diaria de la administración) ─
+const firmar = async (req, res) => {
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(entero).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ mensaje: 'Indique las boletas firmadas' });
+    try {
+        const r = await query(`
+      UPDATE emergencias SET estado = 'firmada', firmada_en = CURRENT_TIMESTAMP, firmada_por = $2
+      WHERE id = ANY($1::int[]) AND estado = 'completa' RETURNING id, numero_control`, [ids, req.usuario.id]);
+        for (const f of r.rows) await registrarBitacora({ query }, req.usuario.id, 'firmar', 'emergencia', f.id, { numero_control: f.numero_control });
+        const omitidas = ids.length - r.rows.length;
+        res.json({
+            mensaje: `${r.rows.length} boleta(s) marcadas como firmadas${omitidas ? `; ${omitidas} no estaban completas` : ''}`,
+            firmadas: r.rows.length
+        });
+    } catch (error) {
+        console.error('Error al firmar boletas:', error);
+        res.status(500).json({ mensaje: 'Error al registrar las firmas' });
+    }
+};
+
+// ── ANULAR: conserva la boleta y su número; devuelve los insumos ─
+const anular = async (req, res) => {
+    const id = entero(req.params.id);
+    const motivo = req.body.motivo?.trim();
+    if (!motivo || motivo.length < 10) {
+        return res.status(400).json({ mensaje: 'Describa el motivo de la anulación (mínimo 10 caracteres)' });
+    }
+    const cliente = await getClient();
+    try {
+        await cliente.query('BEGIN');
+        const e = await cliente.query('SELECT estado, numero_control FROM emergencias WHERE id = $1 FOR UPDATE', [id]);
+        if (!e.rows.length) throw new ErrorNegocio('Servicio no encontrado', 404);
+        if (e.rows[0].estado === 'anulada') throw new ErrorNegocio('La boleta ya estaba anulada');
+        // Un servicio en curso aún no tiene número: cancelarlo no deja un salto en la secuencia.
+        // Con número, solo la administración anula (revisión diaria).
+        if (req.usuario.rol !== 'administrador' && e.rows[0].estado !== 'en_curso') {
+            throw new ErrorNegocio('Solo la administración anula boletas que ya tienen número', 403);
+        }
+
+        // Solo los consumos antiguos descontaban de bodega; esos se devuelven
+        const consumos = await cliente.query(
+            `SELECT id FROM movimientos_inventario WHERE emergencia_id = $1 AND tipo_movimiento = 'salida' AND motivo = 'consumo_servicio'`, [id]);
+        for (const m of consumos.rows) {
+            await anularMovimiento(cliente, m.id, req.usuario.id, `Anulación de boleta ${e.rows[0].numero_control || id}`);
+        }
+        await cliente.query(`
+      UPDATE emergencias SET estado = 'anulada', motivo_anulacion = $1, anulada_por = $2, anulada_en = CURRENT_TIMESTAMP
+      WHERE id = $3`, [motivo, req.usuario.id, id]);
+        await registrarBitacora(cliente, req.usuario.id, 'anular', 'emergencia', id, { motivo, insumos_devueltos: consumos.rows.length });
+        await cliente.query('COMMIT');
+        res.json({ mensaje: `Boleta anulada${consumos.rows.length ? `; se devolvieron ${consumos.rows.length} consumo(s) al inventario` : ''}` });
+    } catch (err) {
+        await cliente.query('ROLLBACK');
+        responderError(res, err, 'Error al anular servicio:');
+    } finally {
+        cliente.release();
+    }
+};
+
+// ── LISTAR CON FILTROS Y PAGINACIÓN ──────────────
 const listar = async (req, res) => {
-    const { tipo_servicio, fecha_inicio, fecha_fin, unidad, zona } = req.query;
+    const { tipo_servicio, subtipo, fecha_inicio, fecha_fin, desde, hasta, unidad_id, sector_id, lugar_critico_id, texto, estado, personal_id } = req.query;
+    const pagina = Math.max(1, entero(req.query.pagina) || 1);
+    const tamano = Math.min(100, Math.max(10, entero(req.query.tamano) || 25));
 
-    const condiciones = [];
-    const valores = [];
+    const cond = [];
+    const val = [];
+    const agregar = (sql, v) => { val.push(v); cond.push(sql.replaceAll('?', `$${val.length}`)); };
 
-    if (tipo_servicio) { valores.push(tipo_servicio); condiciones.push(`e.tipo_servicio = $${valores.length}`); }
-    if (fecha_inicio) { valores.push(fecha_inicio); condiciones.push(`e.fecha >= $${valores.length}`); }
-    if (fecha_fin) { valores.push(fecha_fin); condiciones.push(`e.fecha <= $${valores.length}`); }
-    if (unidad) { valores.push(`%${unidad}%`); condiciones.push(`e.unidad ILIKE $${valores.length}`); }
-    if (zona) { valores.push(`%${zona}%`); condiciones.push(`e.zona ILIKE $${valores.length}`); }
+    if (tipo_servicio) agregar('e.tipo_servicio = ?', tipo_servicio);
+    if (subtipo) agregar('e.subtipo = ?', subtipo);
+    if (fecha_inicio || desde) agregar('e.fecha >= ?', fecha_inicio || desde);
+    if (fecha_fin || hasta) agregar('e.fecha <= ?', fecha_fin || hasta);
+    if (unidad_id) agregar('e.unidad_id = ?', unidad_id);
+    if (lugar_critico_id) agregar('e.lugar_critico_id = ?', lugar_critico_id);
+    if (personal_id) agregar('EXISTS (SELECT 1 FROM boleta_tripulacion t WHERE t.emergencia_id = e.id AND t.personal_id = ?)', personal_id);
+    if (sector_id === 'sin') cond.push('e.sector_id IS NULL');
+    else if (sector_id) agregar('e.sector_id = ?', sector_id);
+    if (req.query.impresion === 'pendiente') cond.push(`e.impresa_en IS NULL AND e.estado IN ('completa', 'firmada')`);
+    if (req.query.impresion === 'impresa') cond.push('e.impresa_en IS NOT NULL');
+    if (estado === 'atendidos') cond.push(contable('e'));
+    else if (estado === 'imprimibles') cond.push(`e.estado IN ('completa', 'firmada')`);
+    else if (estado && estado !== 'todas') agregar('e.estado = ?', estado);
+    else if (!estado) cond.push(`e.estado <> 'anulada'`);
+    if (texto?.trim()) {
+        val.push(`%${texto.trim()}%`);
+        const p = `$${val.length}`;
+        cond.push(`(e.numero_control ILIKE ${p} OR e.direccion ILIKE ${p} OR e.solicitante ILIKE ${p}
+      OR e.observaciones ILIKE ${p} OR da.nombres_pacientes ILIKE ${p} OR dr.nombres_rescatados ILIKE ${p})`);
+    }
 
-    const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+    const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+    const de = `
+    FROM emergencias e
+    JOIN usuarios u ON u.id = e.usuario_id
+    LEFT JOIN sectores s ON s.id = e.sector_id
+    LEFT JOIN detalle_ambulancia da ON da.emergencia_id = e.id
+    LEFT JOIN detalle_rescate dr ON dr.emergencia_id = e.id
+    ${where}`;
 
     try {
-        const resultado = await query(`
-      SELECT e.id, e.numero_control, e.tipo_servicio, e.fecha, e.hora_salida,
-             e.direccion, e.zona, e.unidad, e.piloto, e.solicitante, e.minutos_trabajados,
-             u.nombre_completo AS registrado_por
-      FROM emergencias e
-      JOIN usuarios u ON u.id = e.usuario_id
-      ${where}
-      ORDER BY e.fecha DESC, e.id DESC`, valores);
-
-        res.json({ total: resultado.rows.length, servicios: resultado.rows });
-
+        const total = await query(`SELECT COUNT(*)::int AS n ${de}`, val);
+        const filas = await query(`
+      SELECT e.id, e.numero_control, e.tipo_servicio, e.subtipo, e.fecha, e.hora_salida, e.hora_entrada,
+             e.direccion, e.zona, s.nombre AS sector, e.unidad, e.piloto, e.minutos_trabajados,
+             e.estado, e.impresa_en, e.impresiones, e.regreso_en, u.nombre_completo AS registrado_por,
+             (SELECT COUNT(*)::int FROM v_consumo_servicio m WHERE m.emergencia_id = e.id) AS consumos
+      ${de}
+      ORDER BY e.fecha DESC, e.regreso_en DESC NULLS FIRST, e.hora_salida DESC NULLS LAST, e.id DESC
+      LIMIT ${tamano} OFFSET ${(pagina - 1) * tamano}`, val);
+        res.json({ total: total.rows[0].n, pagina, tamano, servicios: filas.rows });
     } catch (error) {
         console.error('Error al listar servicios:', error);
         res.status(500).json({ mensaje: 'Error al consultar el historial' });
@@ -118,49 +497,304 @@ const listar = async (req, res) => {
 
 // ── OBTENER UNO COMPLETO ─────────────────────────
 const obtenerPorId = async (req, res) => {
-    const { id } = req.params;
-
+    const id = entero(req.params.id);
+    if (!id) return res.status(400).json({ mensaje: 'Identificador inválido' });
     try {
         const base = await query(`
-      SELECT e.*, u.nombre_completo AS registrado_por
+      SELECT e.*, u.nombre_completo AS registrado_por, s.nombre AS sector, lc.nombre AS lugar_critico,
+             ua.nombre_completo AS anulada_por_nombre, ue.nombre_completo AS actualizado_por_nombre,
+             uf.nombre_completo AS firmada_por_nombre
       FROM emergencias e
       JOIN usuarios u ON u.id = e.usuario_id
+      LEFT JOIN sectores s ON s.id = e.sector_id
+      LEFT JOIN lugares_criticos lc ON lc.id = e.lugar_critico_id
+      LEFT JOIN usuarios ua ON ua.id = e.anulada_por
+      LEFT JOIN usuarios ue ON ue.id = e.actualizado_por
+      LEFT JOIN usuarios uf ON uf.id = e.firmada_por
       WHERE e.id = $1`, [id]);
-
-        if (base.rows.length === 0) {
-            return res.status(404).json({ mensaje: 'Servicio no encontrado' });
-        }
+        if (!base.rows.length) return res.status(404).json({ mensaje: 'Servicio no encontrado' });
 
         const servicio = base.rows[0];
-        const tabla = TABLAS_DETALLE[servicio.tipo_servicio];
-
-        const detalle = await query(
-            `SELECT * FROM ${tabla} WHERE emergencia_id = $1`, [id]
-        );
-
+        const detalle = await query(`SELECT * FROM ${TABLAS_DETALLE[servicio.tipo_servicio]} WHERE emergencia_id = $1`, [id]);
+        const [insumos, tripulacion, historial, certificaciones] = await Promise.all([
+            query(`
+        SELECT c.id, c.cantidad, i.id AS insumo_id, i.nombre, i.categoria, i.unidad_medida
+        FROM v_consumo_servicio c JOIN insumos i ON i.id = c.insumo_id
+        WHERE c.emergencia_id = $1
+        ORDER BY i.nombre`, [id]),
+            query(`
+        SELECT p.id, p.nombre_completo, p.es_piloto, p.voluntario, (p.pin_hash IS NOT NULL) AS tiene_pin
+        FROM boleta_tripulacion t JOIN personal p ON p.id = t.personal_id
+        WHERE t.emergencia_id = $1 ORDER BY p.nombre_completo`, [id]),
+            query(`
+        SELECT b.accion, b.detalle, b.creado_en, u.nombre_completo AS usuario
+        FROM bitacora b LEFT JOIN usuarios u ON u.id = b.usuario_id
+        WHERE b.entidad = 'emergencia' AND b.entidad_id = $1
+        ORDER BY b.creado_en DESC`, [id]),
+            query(`
+        SELECT c.*, u.nombre_completo AS emitida_por FROM certificaciones c
+        JOIN usuarios u ON u.id = c.usuario_id WHERE c.emergencia_id = $1 ORDER BY c.creado_en DESC`, [id])
+        ]);
         servicio.detalle = detalle.rows[0] || {};
+        servicio.insumos = insumos.rows;
+        servicio.tripulacion = tripulacion.rows;
+        servicio.historial = historial.rows;
+        servicio.certificaciones = certificaciones.rows;
+        servicio.faltantes = ['en_curso', 'pendiente', 'completa'].includes(servicio.estado)
+            ? faltantes({ ...servicio.detalle, ...servicio }) : [];
         res.json(servicio);
-
     } catch (error) {
         console.error('Error al obtener servicio:', error);
         res.status(500).json({ mensaje: 'Error al consultar el servicio' });
     }
 };
 
+// ── BOLETAS POR COMPLETAR (Inicio) ───────────────
+const porCompletar = async (req, res) => {
+    try {
+        const r = await query(`
+      SELECT e.id FROM emergencias e WHERE e.estado = 'pendiente'
+      ORDER BY e.regreso_en NULLS LAST, e.id LIMIT 50`);
+        const filas = [];
+        for (const { id } of r.rows) {
+            const f = await leerFila({ query }, id);
+            const trip = await query(`
+        SELECT p.nombre_completo FROM boleta_tripulacion t JOIN personal p ON p.id = t.personal_id
+        WHERE t.emergencia_id = $1 ORDER BY p.nombre_completo`, [id]);
+            const s = f.sector_id ? await query('SELECT nombre FROM sectores WHERE id = $1', [f.sector_id]) : { rows: [] };
+            filas.push({
+                id, numero_control: f.numero_control, tipo_servicio: f.tipo_servicio, fecha: f.fecha,
+                hora_entrada: f.hora_entrada, regreso_en: f.regreso_en, direccion: f.direccion,
+                sector: s.rows[0]?.nombre || null, unidad: f.unidad,
+                tripulacion: trip.rows.map(x => x.nombre_completo), faltantes: faltantes(f)
+            });
+        }
+        res.json(filas);
+    } catch (error) {
+        console.error('Error al listar boletas por completar:', error);
+        res.status(500).json({ mensaje: 'Error al consultar las boletas por completar' });
+    }
+};
+
+// ── REVISIÓN DIARIA (entrevista 59:43) ───────────
+// Por tipo: las boletas cuyo regreso se registró ese día, en orden de número,
+// y los números que faltan en la secuencia del año hasta ese día.
+const revision = async (req, res) => {
+    const fecha = FECHA_ISO.test(req.query.fecha || '') ? req.query.fecha : hoyGuatemala();
+    try {
+        const r = await query(`
+      SELECT e.id, e.numero_control, e.secuencia, e.anio_secuencia, e.tipo_servicio, e.estado, e.impresa_en,
+             e.regreso_en, e.hora_entrada, e.unidad, e.motivo_anulacion, COALESCE(s.nombre, e.zona) AS sector
+      FROM emergencias e LEFT JOIN sectores s ON s.id = e.sector_id
+      WHERE e.secuencia IS NOT NULL AND e.regreso_en::date = $1::date
+      ORDER BY e.tipo_servicio, e.secuencia`, [fecha]);
+
+        // Huecos: números del año que no existen, entre 1 y el mayor asignado hasta ese día
+        const huecos = await query(`
+      WITH maximos AS (
+        SELECT tipo_servicio, anio_secuencia, MAX(secuencia) AS maximo
+        FROM emergencias WHERE secuencia IS NOT NULL AND anio_secuencia = EXTRACT(YEAR FROM $1::date)
+          AND regreso_en::date <= $1::date
+        GROUP BY 1, 2)
+      SELECT m.tipo_servicio, g.n AS secuencia
+      FROM maximos m CROSS JOIN LATERAL generate_series(1, m.maximo) AS g(n)
+      WHERE NOT EXISTS (SELECT 1 FROM emergencias e WHERE e.tipo_servicio = m.tipo_servicio
+                        AND e.anio_secuencia = m.anio_secuencia AND e.secuencia = g.n)
+      ORDER BY 1, 2`, [fecha]);
+
+        // Pendientes de días anteriores: siguen esperando a la tripulación
+        const atrasadas = await query(`
+      SELECT e.id, e.numero_control, e.tipo_servicio, e.regreso_en, e.unidad
+      FROM emergencias e
+      WHERE e.estado IN ('pendiente', 'completa') AND e.regreso_en::date < $1::date
+      ORDER BY e.regreso_en`, [fecha]);
+
+        const tipos = Object.keys(TABLAS_DETALLE).map(t => ({
+            tipo_servicio: t,
+            boletas: r.rows.filter(x => x.tipo_servicio === t),
+            huecos: huecos.rows.filter(x => x.tipo_servicio === t).map(x => x.secuencia)
+        }));
+        res.json({
+            fecha, tipos, atrasadas: atrasadas.rows,
+            resumen: {
+                total: r.rows.length,
+                firmadas: r.rows.filter(x => x.estado === 'firmada').length,
+                por_firmar: r.rows.filter(x => x.estado === 'completa').length,
+                por_completar: r.rows.filter(x => x.estado === 'pendiente').length,
+                huecos: huecos.rows.length
+            }
+        });
+    } catch (error) {
+        console.error('Error en la revisión diaria:', error);
+        res.status(500).json({ mensaje: 'Error al preparar la revisión' });
+    }
+};
+
+// ── COPIA CERTIFICADA ────────────────────────────
+const certificar = async (req, res) => {
+    const id = entero(req.params.id);
+    const solicitante = req.body.solicitante?.trim();
+    if (!solicitante) return res.status(400).json({ mensaje: 'Indique a nombre de quién se extiende la copia' });
+    const fecha = FECHA_ISO.test(req.body.fecha || '') ? req.body.fecha : hoyGuatemala();
+    try {
+        const e = await query('SELECT estado FROM emergencias WHERE id = $1', [id]);
+        if (!e.rows.length) return res.status(404).json({ mensaje: 'Servicio no encontrado' });
+        if (!['completa', 'firmada'].includes(e.rows[0].estado)) {
+            return res.status(400).json({ mensaje: 'Solo se certifica una boleta completa o firmada' });
+        }
+        const r = await query(`
+      INSERT INTO certificaciones (emergencia_id, solicitante, destino, fecha, usuario_id)
+      VALUES ($1, $2, $3, $4, $5) RETURNING *`, [id, solicitante, req.body.destino?.trim() || null, fecha, req.usuario.id]);
+        await query('UPDATE emergencias SET copia_certificada_a = $1, fecha_certificacion = $2 WHERE id = $3', [solicitante, fecha, id]);
+        await registrarBitacora({ query }, req.usuario.id, 'certificar', 'emergencia', id, { solicitante, destino: req.body.destino });
+        res.status(201).json(r.rows[0]);
+    } catch (error) {
+        console.error('Error al certificar:', error);
+        res.status(500).json({ mensaje: 'Error al registrar la copia certificada' });
+    }
+};
+
+// ── AGREGAR / QUITAR INSUMOS USADOS EN LA BOLETA ─
+const agregarInsumo = async (req, res) => {
+    const id = entero(req.params.id);
+    const cliente = await getClient();
+    try {
+        await cliente.query('BEGIN');
+        const e = await cliente.query('SELECT estado FROM emergencias WHERE id = $1', [id]);
+        if (!e.rows.length) throw new ErrorNegocio('Servicio no encontrado', 404);
+        if (!EDITABLES.has(e.rows[0].estado)) throw new ErrorNegocio('La boleta ya no se puede modificar');
+        await verificarAutoria(cliente, req, id, e.rows[0].estado);
+        const nombre = await registrarUso(cliente, id, req.body, req.usuario.id);
+        await registrarBitacora(cliente, req.usuario.id, 'agregar_insumo', 'emergencia', id, { insumo: nombre, cantidad: Number(req.body.cantidad) });
+        await cliente.query('COMMIT');
+        res.status(201).json({ mensaje: 'Uso registrado' });
+    } catch (err) {
+        await cliente.query('ROLLBACK');
+        responderError(res, err, 'Error al agregar insumo:');
+    } finally {
+        cliente.release();
+    }
+};
+
+// Quita un uso registrado. Los consumos antiguos ("m…") eran salidas de bodega y se devuelven
+const quitarInsumo = async (req, res) => {
+    const id = entero(req.params.id);
+    const ref = String(req.params.movId);
+    const cliente = await getClient();
+    try {
+        await cliente.query('BEGIN');
+        const e = await cliente.query('SELECT estado FROM emergencias WHERE id = $1', [id]);
+        if (!e.rows.length) throw new ErrorNegocio('Servicio no encontrado', 404);
+        if (!EDITABLES.has(e.rows[0].estado)) throw new ErrorNegocio('La boleta ya no se puede modificar');
+        await verificarAutoria(cliente, req, id, e.rows[0].estado);
+        if (ref.startsWith('m')) {
+            const movId = entero(ref.slice(1));
+            const m = await cliente.query('SELECT emergencia_id FROM movimientos_inventario WHERE id = $1', [movId]);
+            if (!m.rows.length || m.rows[0].emergencia_id !== id) throw new ErrorNegocio('El consumo no pertenece a esta boleta', 404);
+            await anularMovimiento(cliente, movId, req.usuario.id, 'Corrección de consumo en boleta');
+        } else {
+            const r = await cliente.query('DELETE FROM consumos_servicio WHERE id = $1 AND emergencia_id = $2 RETURNING insumo_id, cantidad',
+                [entero(ref.replace(/^u/, '')), id]);
+            if (!r.rows.length) throw new ErrorNegocio('El uso no pertenece a esta boleta', 404);
+        }
+        await registrarBitacora(cliente, req.usuario.id, 'quitar_insumo', 'emergencia', id, { referencia: ref });
+        await cliente.query('COMMIT');
+        res.json({ mensaje: 'Uso retirado' });
+    } catch (err) {
+        await cliente.query('ROLLBACK');
+        responderError(res, err, 'Error al quitar insumo:');
+    } finally {
+        cliente.release();
+    }
+};
+
 // ── LISTA SIMPLE PARA VINCULAR SALIDAS ───────────
 const listarParaVinculo = async (req, res) => {
+    const texto = req.query.texto?.trim();
     try {
-        const resultado = await query(`
-      SELECT id, numero_control, tipo_servicio, fecha
-      FROM emergencias
-      ORDER BY fecha DESC, id DESC
-      LIMIT 100`);
-
-        res.json(resultado.rows);
+        const r = await query(`
+      SELECT e.id, e.numero_control, e.tipo_servicio, e.fecha, COALESCE(s.nombre, e.zona) AS sector
+      FROM emergencias e LEFT JOIN sectores s ON s.id = e.sector_id
+      WHERE ${contable('e')} ${texto ? 'AND (e.numero_control ILIKE $1 OR e.direccion ILIKE $1)' : ''}
+      ORDER BY e.fecha DESC, e.id DESC
+      LIMIT 50`, texto ? [`%${texto}%`] : []);
+        res.json(r.rows);
     } catch (error) {
         console.error('Error al listar servicios:', error);
         res.status(500).json({ mensaje: 'Error al consultar los servicios' });
     }
 };
 
-module.exports = { registrar, listar, obtenerPorId, listarParaVinculo };
+// ── IMPRESIÓN ────────────────────────────────────
+const marcarImpresa = async (req, res) => {
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [req.params.id]).map(entero).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ mensaje: 'Indique las boletas impresas' });
+    try {
+        const r = await query(`
+      UPDATE emergencias SET impresa_en = CURRENT_TIMESTAMP, impresiones = impresiones + 1
+      WHERE id = ANY($1::int[]) AND estado IN ('completa', 'firmada') RETURNING id`, [ids]);
+        res.json({ impresas: r.rows.length });
+    } catch (error) {
+        console.error('Error al marcar impresión:', error);
+        res.status(500).json({ mensaje: 'Error al registrar la impresión' });
+    }
+};
+
+// Contadores para el menú y el inicio
+const contadores = async (req, res) => {
+    try {
+        const r = await query(`
+      SELECT COUNT(*) FILTER (WHERE estado IN ('completa', 'firmada') AND impresa_en IS NULL)::int AS por_imprimir,
+             COUNT(*) FILTER (WHERE estado = 'pendiente')::int AS por_completar,
+             COUNT(*) FILTER (WHERE estado = 'completa')::int AS por_firmar,
+             COUNT(*) FILTER (WHERE estado = 'en_curso')::int AS en_curso
+      FROM emergencias`);
+        res.json({ ...r.rows[0], n: r.rows[0].por_imprimir });
+    } catch (error) {
+        console.error('Error al contar boletas:', error);
+        res.status(500).json({ mensaje: 'Error al consultar' });
+    }
+};
+
+// ── SERVICIOS EN CURSO (unidades fuera de la estación) ─
+const enCurso = async (req, res) => {
+    try {
+        const r = await query(`
+      SELECT e.id, e.tipo_servicio, e.subtipo, e.fecha, e.hora_salida,
+             e.direccion, COALESCE(s.nombre, e.zona) AS sector, e.unidad, e.unidad_id, e.piloto, e.piloto_id, e.creado_en,
+             COALESCE((SELECT array_agg(bt.personal_id) FROM boleta_tripulacion bt WHERE bt.emergencia_id = e.id), '{}') AS tripulacion
+      FROM emergencias e LEFT JOIN sectores s ON s.id = e.sector_id
+      WHERE e.estado = 'en_curso'
+      ORDER BY e.fecha, e.hora_salida NULLS LAST, e.id`);
+        res.json(r.rows);
+    } catch (error) {
+        console.error('Error al listar servicios en curso:', error);
+        res.status(500).json({ mensaje: 'Error al consultar los servicios en curso' });
+    }
+};
+
+// ── LLAMANTE FRECUENTE: datos de la última boleta con ese teléfono ─
+const llamante = async (req, res) => {
+    const telefono = (req.query.telefono || '').replace(/\D/g, '');
+    if (telefono.length < 8) return res.json(null);
+    try {
+        const r = await query(`
+      SELECT e.solicitante, e.direccion, e.sector_id, COALESCE(s.nombre, e.zona) AS sector, e.fecha,
+             (SELECT COUNT(*)::int FROM emergencias x
+               WHERE regexp_replace(x.solicitud_por_telefono, '\\D', '', 'g') = $1) AS llamadas
+      FROM emergencias e LEFT JOIN sectores s ON s.id = e.sector_id
+      WHERE regexp_replace(e.solicitud_por_telefono, '\\D', '', 'g') = $1 AND e.estado <> 'anulada'
+      ORDER BY e.fecha DESC, e.id DESC LIMIT 1`, [telefono]);
+        res.json(r.rows[0] || null);
+    } catch (error) {
+        console.error('Error al buscar llamante:', error);
+        res.status(500).json({ mensaje: 'Error al consultar' });
+    }
+};
+
+module.exports = {
+    enCurso, llamante, marcarImpresa, contadores, porCompletar, revision,
+    registrar, registrarRegreso, guardar, verificarPin, firmar, anular, certificar,
+    listar, obtenerPorId, agregarInsumo, quitarInsumo, listarParaVinculo,
+    faltantes
+};

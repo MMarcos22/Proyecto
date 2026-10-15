@@ -1,389 +1,251 @@
 <template>
   <div class="animar">
-    <div class="titulo-seccion fila-entre no-imprimir">
+    <div class="titulo-seccion no-imprimir">
       <div>
-        <h1>Control de ingresos y egresos</h1>
-        <p class="sub">Hoja mensual de movimientos por categoría de insumo</p>
+        <h1>Control mensual</h1>
       </div>
-      <div class="fila">
-        <button class="btn btn-secundario" @click="imprimir" :disabled="cargando">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 6 2 18 2 18 9"/>
-            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
-            <rect x="6" y="14" width="12" height="8"/>
-          </svg>
-          <span>Imprimir</span>
+      <div class="acciones">
+        <span v-if="cierre" class="etiqueta et-exito cerrado">Cerrado el {{ fechaHora(cierre.cerrado_en) }} · {{ cierre.cerrado_por }}</span>
+        <button v-else-if="auth.esAdministrador && mesTerminado" class="btn btn-secundario" :disabled="cerrando" @click="cerrarMes">
+          <Icono nombre="check" :tam="17" />Cerrar {{ meses[periodo.mes - 1].toLowerCase() }}
         </button>
-        <button class="btn btn-exito" @click="descargarExcel" :disabled="descargando">
-          <template v-if="!descargando">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            <span>Exportar a Excel</span>
-          </template>
-          <template v-else><span class="cargador"></span><span>Generando</span></template>
+        <button class="btn btn-secundario" @click="descargarExcel" :disabled="descargando">
+          <span v-if="descargando" class="cargador cargador-oscuro"></span><Icono v-else nombre="descargar" :tam="17" />Excel del mes
         </button>
+        <button class="btn btn-primario" @click="imprimir(false)" :disabled="cargando || !categoria"><Icono nombre="imprimir" :tam="17" />Imprimir hoja</button>
       </div>
     </div>
 
-    <div class="barra-control no-imprimir">
-      <div class="pestanas">
-        <button v-for="(c, i) in datos.categorias" :key="c.clave"
-                class="pestana" :class="{ activa: hojaActiva === i }"
-                @click="hojaActiva = i">
-          {{ c.hoja }}
-        </button>
+    <!-- Mes -->
+    <div class="selector-mes tarjeta no-imprimir">
+      <button class="btn btn-plano btn-icono" @click="cambiarMes(-1)" aria-label="Mes anterior"><Icono nombre="flecha_izq" :tam="20" /></button>
+      <div class="mes-actual">
+        <strong>{{ meses[periodo.mes - 1] }} {{ periodo.anio }}</strong>
+        <span class="tenue">viene de {{ datos.mes_anterior || '—' }}</span>
       </div>
-      <div class="fila">
-        <select v-model.number="periodo.mes" class="control control-sm" @change="cargar">
-          <option v-for="(m,i) in meses" :key="i" :value="i+1">{{ m }}</option>
-        </select>
-        <select v-model.number="periodo.anio" class="control control-sm" @change="cargar">
-          <option v-for="a in anios" :key="a" :value="a">{{ a }}</option>
-        </select>
-      </div>
+      <button class="btn btn-plano btn-icono" @click="cambiarMes(1)" :disabled="esMesActual" aria-label="Mes siguiente"><Icono nombre="flecha_der" :tam="20" /></button>
+      <button v-if="!esMesActual" class="btn btn-secundario btn-sm" @click="irMesActual">Ir al mes actual</button>
     </div>
 
-    <div v-if="cargando" class="tarjeta estado-carga">
-      <span class="cargador cargador-oscuro"></span>
-      <p>Cargando control mensual</p>
+    <div class="barra-filtros no-imprimir">
+      <div class="segmentos">
+        <button v-for="(c, i) in datos.categorias" :key="c.clave" :class="{ activo: hojaActiva === i }" @click="hojaActiva = i">
+          {{ nombreCategoria(c.clave) }} <span class="cuenta">{{ c.insumos.length }}</span>
+        </button>
+      </div>
+      <div class="busqueda">
+        <Icono nombre="buscar" :tam="17" />
+        <input v-model="busqueda" class="control" type="search" placeholder="Buscar insumo" aria-label="Buscar insumo" />
+      </div>
+      <label class="solo-mov"><input type="checkbox" v-model="soloConMovimiento" /> Solo con movimiento este mes</label>
     </div>
 
-    <div v-else-if="categoria" class="hoja-control">
-      <div class="hc-encabezado">
-        <img src="/LogoBomberos.png" alt="Logo" />
-        <div>
-          <p>BENEMÉRITO CUERPO VOLUNTARIO DE BOMBEROS</p>
-          <p>TRIGÉSIMA NOVENA COMPAÑÍA CHIQUIMULA, GUATEMALA</p>
-          <p>{{ categoria.titulo }}</p>
-          <p>DURANTE EL MES DE {{ datos.periodo.mes.toUpperCase() }} DE {{ datos.periodo.anio }}</p>
+    <div v-if="cargando" class="esqueleto no-imprimir" style="height:320px"></div>
+
+    <template v-else-if="categoria">
+      <!-- Resumen de la categoría -->
+      <div class="resumen-cat no-imprimir">
+        <div class="tarjeta"><span class="rotulo">Insumos con entradas</span><strong>{{ resumen.conEntrada }}</strong></div>
+        <div class="tarjeta"><span class="rotulo">Insumos con salidas</span><strong>{{ resumen.conSalida }}</strong></div>
+        <div class="tarjeta"><span class="rotulo">Sin existencia al cierre</span><strong :class="{ rojo: resumen.agotados }">{{ resumen.agotados }}</strong></div>
+      </div>
+
+      <!-- Lista para trabajar -->
+      <ul class="lista-control no-imprimir">
+        <li class="cabeza-lista" aria-hidden="true">
+          <span>Insumo</span><span>Venía</span><span>Entró</span><span>Salió</span><span>Quedó</span>
+        </li>
+        <li v-for="r in filas" :key="r.id" class="tarjeta">
+          <div class="nombre">
+            <strong>{{ r.nombre }}</strong>
+            <span class="tenue">{{ existencias[r.id]?.unidad_medida || 'unidad' }}{{ r.fecha_ingreso ? ` · ingresó el ${r.fecha_ingreso}` : '' }}</span>
+          </div>
+          <span class="cifra" data-et="Venía">{{ r.vienen }}</span>
+          <span class="cifra entra" data-et="Entró">{{ r.ingreso ? `+${r.ingreso}` : '—' }}</span>
+          <span class="cifra sale" data-et="Salió">{{ r.salida ? `−${r.salida}` : '—' }}</span>
+          <span class="cifra total" :class="{ rojo: r.vienen + r.ingreso - r.salida <= 0 }" data-et="Quedó">{{ r.vienen + r.ingreso - r.salida }}</span>
+        </li>
+        <li v-if="!filas.length" class="tarjeta vacio">
+          <strong>{{ busqueda || soloConMovimiento ? 'Ningún insumo coincide' : 'Sin insumos en esta categoría' }}</strong>
+        </li>
+      </ul>
+      <p class="pista no-imprimir">¿Necesita las cuatro hojas? <button class="btn-enlace" @click="imprimir(true)">Imprimir todas las categorías</button></p>
+
+      <!-- Hoja oficial: solo se ve al imprimir -->
+      <div class="solo-impresion">
+        <div v-for="cat in hojasAImprimir" :key="cat.clave" class="hoja-control">
+          <div class="hc-encabezado">
+            <img src="/LogoBomberos.png" alt="Logo" />
+            <div>
+              <p>BENEMÉRITO CUERPO VOLUNTARIO DE BOMBEROS</p>
+              <p>TRIGÉSIMA NOVENA COMPAÑÍA CHIQUIMULA, GUATEMALA</p>
+              <p>{{ cat.titulo }}</p>
+              <p>DURANTE EL MES DE {{ datos.periodo.mes.toUpperCase() }} DE {{ datos.periodo.anio }}</p>
+            </div>
+          </div>
+          <table class="hc-tabla">
+            <thead>
+              <tr>
+                <th rowspan="2" class="w-no">No.</th>
+                <th rowspan="2" class="w-ins">INSUMO</th>
+                <th>MES: {{ datos.mes_anterior.toUpperCase() }}</th>
+                <th colspan="2">INGRESO</th>
+                <th>EXISTENCIA</th>
+                <th>SALIDA</th>
+                <th rowspan="2">TOTAL</th>
+              </tr>
+              <tr><th>VIENEN</th><th>FECHA</th><th>CANTIDAD</th><th>CANTIDAD</th><th>CANTIDAD</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(r, i) in cat.insumos" :key="r.id">
+                <td class="c">{{ i + 1 }}</td>
+                <td class="l">{{ r.nombre.toUpperCase() }}</td>
+                <td class="c">{{ r.vienen }}</td>
+                <td class="c">{{ r.fecha_ingreso || '' }}</td>
+                <td class="c">{{ r.ingreso || '' }}</td>
+                <td class="c">{{ r.vienen + r.ingreso }}</td>
+                <td class="c">{{ r.salida || '' }}</td>
+                <td class="c fuerte">{{ r.vienen + r.ingreso - r.salida }}</td>
+              </tr>
+              <tr class="fila-vacia"><td colspan="8">&nbsp;</td></tr>
+              <tr class="fila-vacia"><td colspan="8">&nbsp;</td></tr>
+            </tbody>
+          </table>
+          <div class="hc-firma">
+            <div class="raya"></div>
+            <p>Of. I As. Kevin Gabriel Cerín Marroquín</p>
+            <p>Director 39 Compañía</p>
+          </div>
         </div>
       </div>
+    </template>
 
-      <table class="hc-tabla">
-        <thead>
-          <tr>
-            <th rowspan="2" class="w-no">No.</th>
-            <th rowspan="2" class="w-ins">INSUMO</th>
-            <th>MES: {{ datos.mes_anterior.toUpperCase() }}</th>
-            <th colspan="2">INGRESO</th>
-            <th>EXISTENCIA</th>
-            <th>SALIDA</th>
-            <th rowspan="2">TOTAL</th>
-          </tr>
-          <tr>
-            <th>VIENEN</th><th>FECHA</th><th>CANTIDAD</th>
-            <th>CANTIDAD</th><th>CANTIDAD</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(r, i) in categoria.insumos" :key="r.id">
-            <td class="c">{{ i + 1 }}</td>
-            <td class="l">{{ r.nombre.toUpperCase() }}</td>
-            <td class="c calc">{{ r.vienen }}</td>
-            <td class="c calc">{{ r.fecha_ingreso || '' }}</td>
-            <td class="c celda-edit" :class="{ vacia: !r.ingreso }"
-                @click="abrirEntrada(r)" title="Registrar ingreso">
-              {{ r.ingreso || '' }}
-            </td>
-            <td class="c calc">{{ r.vienen + r.ingreso }}</td>
-            <td class="c celda-edit" :class="{ vacia: !r.salida }"
-                @click="abrirSalida(r)" title="Registrar salida">
-              {{ r.salida || '' }}
-            </td>
-            <td class="c calc fuerte">{{ r.vienen + r.ingreso - r.salida }}</td>
-          </tr>
-          <tr class="fila-vacia"><td colspan="8">&nbsp;</td></tr>
-          <tr class="fila-vacia"><td colspan="8">&nbsp;</td></tr>
-        </tbody>
-      </table>
-
-      <div class="hc-firma">
-        <div class="raya"></div>
-        <p>Of. I As. Kevin Gabriel Cerín Marroquín</p>
-        <p>Director 39 Compañía</p>
-      </div>
-    </div>
-
-    <p class="pista no-imprimir">
-      Haga clic sobre las celdas de <strong>Ingreso</strong> o <strong>Salida</strong>
-      para registrar un movimiento. Las demás columnas se calculan automáticamente.
-    </p>
-
-    <!-- ══ MODAL ENTRADA ══════════════════════ -->
-    <Modal v-model="modalEntrada" titulo="Registrar ingreso de insumo">
-      <p class="insumo-sel">{{ insumoSel?.nombre }}</p>
-
-      <div class="rejilla rejilla-2">
-        <div class="campo">
-          <label>Cantidad <span class="req">*</span></label>
-          <input v-model.number="entrada.cantidad" class="control" type="number" min="1" />
-        </div>
-        <div class="campo">
-          <label>Fecha del ingreso</label>
-          <input v-model="entrada.fecha_movimiento" class="control" type="date" />
-        </div>
-      </div>
-
-      <div class="rejilla rejilla-2">
-        <div class="campo">
-          <label>Número de lote</label>
-          <input v-model="entrada.numero_lote" class="control" type="text" />
-        </div>
-        <div class="campo">
-          <label>Fecha de vencimiento</label>
-          <input v-model="entrada.fecha_vencimiento" class="control" type="date" :min="hoy" />
-        </div>
-      </div>
-
-      <div class="campo">
-        <label>Observaciones</label>
-        <textarea v-model="entrada.observaciones" class="control" rows="2"></textarea>
-      </div>
-
-      <template #acciones>
-        <button class="btn btn-secundario" @click="modalEntrada = false">Cancelar</button>
-        <button class="btn btn-exito" @click="guardarEntrada" :disabled="procesando">
-          <span v-if="!procesando">Registrar ingreso</span>
-          <template v-else><span class="cargador"></span><span>Guardando</span></template>
-        </button>
-      </template>
-    </Modal>
-
-    <!-- ══ MODAL SALIDA ═══════════════════════ -->
-    <Modal v-model="modalSalida" titulo="Registrar salida de insumo">
-      <p class="insumo-sel">{{ insumoSel?.nombre }}</p>
-
-      <div class="nota-info">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
-        </svg>
-        <span>Toda salida debe vincularse al servicio de emergencia en que se utilizó el insumo.</span>
-      </div>
-
-      <div class="rejilla rejilla-2">
-        <div class="campo">
-          <label>Cantidad <span class="req">*</span></label>
-          <input v-model.number="salida.cantidad" class="control" type="number" min="1" />
-        </div>
-        <div class="campo">
-          <label>Fecha de la salida</label>
-          <input v-model="salida.fecha_movimiento" class="control" type="date" />
-        </div>
-      </div>
-
-      <div class="campo">
-        <label>Servicio de emergencia <span class="req">*</span></label>
-        <select v-model="salida.emergencia_id" class="control">
-          <option value="">Seleccione el servicio</option>
-          <option v-for="s in servicios" :key="s.id" :value="s.id">
-            {{ s.numero_control }} · {{ nombreTipo(s.tipo_servicio) }} · {{ fmt(s.fecha) }}
-          </option>
-        </select>
-      </div>
-
-      <div class="campo">
-        <label>Observaciones</label>
-        <textarea v-model="salida.observaciones" class="control" rows="2"></textarea>
-      </div>
-
-      <template #acciones>
-        <button class="btn btn-secundario" @click="modalSalida = false">Cancelar</button>
-        <button class="btn btn-primario" @click="guardarSalida" :disabled="procesando">
-          <span v-if="!procesando">Registrar salida</span>
-          <template v-else><span class="cargador"></span><span>Guardando</span></template>
-        </button>
-      </template>
-    </Modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
-import { reportes, inventario, emergencias } from '../services/api';
+import { ref, reactive, computed, nextTick, onMounted } from 'vue';
+import { useCatalogosStore } from '../stores/catalogos';
+import { reportes, inventario, mensajeError } from '../services/api';
 import { useNotificacionesStore } from '../stores/notificaciones';
-import { useAlertasStore } from '../stores/alertas';
-import Modal from '../components/Modal.vue';
+import { useAuthStore } from '../stores/auth';
+import { fechaHora, hoy } from '../utils/formato';
+import Icono from '../components/Icono.vue';
 
 const notif = useNotificacionesStore();
-const alertasStore = useAlertasStore();
+const auth = useAuthStore();
+const catalogos = useCatalogosStore();
+const nombreCategoria = (c) => catalogos.nombreCategoria(c);
 
-const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const anioActual = new Date().getFullYear();
 const anios = [anioActual, anioActual - 1, anioActual - 2];
-const hoy = new Date().toISOString().split('T')[0];
 
 const periodo = reactive({ mes: new Date().getMonth() + 1, anio: anioActual });
 const datos = ref({ categorias: [], periodo: {}, mes_anterior: '' });
 const hojaActiva = ref(0);
-const cargando   = ref(true);
-const descargando= ref(false);
-const procesando = ref(false);
+const cargando = ref(true);
+const descargando = ref(false);
+const existencias = ref({});
 
-const servicios = ref([]);
-const insumoSel = ref(null);
-const modalEntrada = ref(false);
-const modalSalida  = ref(false);
-
-const entrada = reactive({
-  cantidad: null, fecha_movimiento: hoy,
-  numero_lote: '', fecha_vencimiento: '', observaciones: ''
-});
-const salida = reactive({
-  cantidad: null, fecha_movimiento: hoy,
-  emergencia_id: '', observaciones: ''
-});
+const cierres = ref([]);
+const cerrando = ref(false);
+const cierre = computed(() => cierres.value.find(c => c.anio === periodo.anio && c.mes === periodo.mes));
+// Solo se cierra un mes que ya terminó
+const mesTerminado = computed(() => `${periodo.anio}-${String(periodo.mes).padStart(2, '0')}` < hoy().slice(0, 7));
 
 const categoria = computed(() => datos.value.categorias[hojaActiva.value]);
+const busqueda = ref('');
+const soloConMovimiento = ref(false);
+const imprimirTodas = ref(false);
 
-const NOMBRES = {
-  ambulancia:'Ambulancia', incendio:'Incendio', rescate:'Rescate',
-  varios:'Varios', agua:'Agua'
+const filas = computed(() => {
+  const t = busqueda.value.trim().toLowerCase();
+  return (categoria.value?.insumos || []).filter(r =>
+    (!t || r.nombre.toLowerCase().includes(t)) && (!soloConMovimiento.value || r.ingreso || r.salida));
+});
+const resumen = computed(() => {
+  const l = categoria.value?.insumos || [];
+  return {
+    conEntrada: l.filter(r => r.ingreso).length,
+    conSalida: l.filter(r => r.salida).length,
+    agotados: l.filter(r => r.vienen + r.ingreso - r.salida <= 0).length
+  };
+});
+const hojasAImprimir = computed(() => (imprimirTodas.value ? datos.value.categorias : categoria.value ? [categoria.value] : []));
+
+const hoyMes = { mes: new Date().getMonth() + 1, anio: new Date().getFullYear() };
+const esMesActual = computed(() => periodo.mes === hoyMes.mes && periodo.anio === hoyMes.anio);
+const cambiarMes = (d) => {
+  let m = periodo.mes + d, a = periodo.anio;
+  if (m < 1) { m = 12; a--; }
+  if (m > 12) { m = 1; a++; }
+  Object.assign(periodo, { mes: m, anio: a });
+  cargar();
 };
-const nombreTipo = (t) => NOMBRES[t] || t;
-const fmt = (f) => new Date(f).toLocaleDateString('es-GT',
-  { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC' });
+const irMesActual = () => { Object.assign(periodo, hoyMes); cargar(); };
 
 const cargar = async () => {
   cargando.value = true;
   try {
-    const { data } = await reportes.inventarioControlMensual({
-      mes: periodo.mes, anio: periodo.anio
-    });
-    datos.value = data;
-  } catch {
-    notif.error('No se pudo cargar el control mensual');
+    const [c, i, k] = await Promise.all([
+      reportes.inventarioControlMensual({ mes: periodo.mes, anio: periodo.anio }),
+      inventario.listar(),
+      inventario.cierres().catch(() => ({ data: [] }))
+    ]);
+    datos.value = c.data;
+    existencias.value = Object.fromEntries(i.data.insumos.map(x => [x.id, x]));
+    cierres.value = k.data;
+  } catch (e) {
+    notif.error(mensajeError(e, 'No se pudo cargar el control mensual'));
   } finally {
     cargando.value = false;
   }
 };
 
-const cargarServicios = async () => {
+const cerrarMes = async () => {
+  if (!confirm(`¿Cerrar ${meses[periodo.mes - 1]} ${periodo.anio}? Sus saldos quedarán como lo que «viene» al mes siguiente; registrar algo con fecha de ese mes pedirá una justificación.`)) return;
+  cerrando.value = true;
   try {
-    const { data } = await emergencias.paraVinculo();
-    servicios.value = data;
-  } catch { /* silencioso */ }
-};
-
-const abrirEntrada = (r) => {
-  insumoSel.value = r;
-  Object.assign(entrada, {
-    cantidad: null, fecha_movimiento: hoy,
-    numero_lote: '', fecha_vencimiento: '', observaciones: ''
-  });
-  modalEntrada.value = true;
-};
-
-const abrirSalida = async (r) => {
-  insumoSel.value = r;
-  Object.assign(salida, {
-    cantidad: null, fecha_movimiento: hoy,
-    emergencia_id: '', observaciones: ''
-  });
-  if (!servicios.value.length) await cargarServicios();
-  modalSalida.value = true;
-};
-
-const guardarEntrada = async () => {
-  if (!entrada.cantidad || entrada.cantidad <= 0) {
-    return notif.alerta('Indique una cantidad válida');
-  }
-  procesando.value = true;
-  try {
-    await inventario.entrada({
-      insumo_id: insumoSel.value.id,
-      cantidad: entrada.cantidad,
-      numero_lote: entrada.numero_lote || null,
-      fecha_vencimiento: entrada.fecha_vencimiento || null,
-      fecha_movimiento: entrada.fecha_movimiento || null,
-      observaciones: entrada.observaciones || null
-    });
-    notif.exito('Ingreso registrado correctamente');
-    modalEntrada.value = false;
-    cargar();
-    alertasStore.cargar();
+    const { data } = await inventario.cerrarMes(periodo.anio, periodo.mes);
+    notif.exito(data.mensaje);
+    await cargar();
   } catch (e) {
-    notif.error(e.response?.data?.mensaje || 'No se pudo registrar el ingreso');
+    notif.error(mensajeError(e));
   } finally {
-    procesando.value = false;
-  }
-};
-
-const guardarSalida = async () => {
-  if (!salida.cantidad || salida.cantidad <= 0) {
-    return notif.alerta('Indique una cantidad válida');
-  }
-  if (!salida.emergencia_id) {
-    return notif.alerta('Debe vincular la salida a un servicio de emergencia');
-  }
-  procesando.value = true;
-  try {
-    const { data } = await inventario.salida({
-      insumo_id: insumoSel.value.id,
-      cantidad: salida.cantidad,
-      emergencia_id: salida.emergencia_id,
-      fecha_movimiento: salida.fecha_movimiento || null,
-      observaciones: salida.observaciones || null
-    });
-    notif.exito('Salida registrada correctamente');
-    if (data.alerta) notif.alerta(data.alerta);
-    modalSalida.value = false;
-    cargar();
-    alertasStore.cargar();
-  } catch (e) {
-    notif.error(e.response?.data?.mensaje || 'No se pudo registrar la salida');
-  } finally {
-    procesando.value = false;
+    cerrando.value = false;
   }
 };
 
 const descargarExcel = async () => {
   descargando.value = true;
   try {
-    const blob = await reportes.inventarioExcel(periodo.mes, periodo.anio);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Inventario_${meses[periodo.mes-1]}_${periodo.anio}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
-    notif.exito('Archivo generado correctamente');
-  } catch {
-    notif.error('No se pudo generar el archivo');
+    await reportes.inventarioExcel(periodo.mes, periodo.anio);
+  } catch (e) {
+    notif.error(mensajeError(e, 'No se pudo generar el archivo'));
   } finally {
     descargando.value = false;
   }
 };
 
-const imprimir = () => window.print();
 
-onMounted(cargar);
+const imprimir = async (todas) => {
+  imprimirTodas.value = todas;
+  await nextTick();
+  window.print();
+  imprimirTodas.value = false;
+};
+
+onMounted(() => {
+  catalogos.cargar().catch(() => {});
+  cargar();
+});
 </script>
 
 <style scoped>
 .barra-control {
   display: flex; align-items: center; justify-content: space-between;
   gap: 14px; margin-bottom: 16px; flex-wrap: wrap;
-}
-.pestanas {
-  display: flex; gap: 4px; padding: 4px;
-  background: var(--superficie-alt);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio);
-}
-.pestana {
-  padding: 7px 15px;
-  background: transparent; border: none; border-radius: var(--radio-sm);
-  color: var(--texto-suave);
-  font: inherit; font-size: 12px; font-weight: 500;
-  cursor: pointer; transition: all var(--transicion);
-}
-.pestana:hover { color: var(--texto); }
-.pestana.activa {
-  background: var(--superficie); color: var(--rojo-bomberos);
-  box-shadow: var(--sombra-sm);
 }
 .control-sm { width: auto; min-width: 128px; }
 
@@ -475,6 +337,46 @@ onMounted(cargar);
 .nota-info svg { flex-shrink: 0; margin-top: 1px; }
 
 /* ── IMPRESIÓN ────────────────────────────── */
+/* ── Vista de trabajo ───────────────────────── */
+.selector-mes { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 18px; width: fit-content; max-width: 100%; }
+.mes-actual { min-width: 200px; text-align: center; }
+.mes-actual strong { display: block; font-size: 20px; text-transform: capitalize; }
+.mes-actual span { font-size: 13.5px; }
+.solo-mov { display: inline-flex; align-items: center; gap: 8px; font-size: 14.5px; color: var(--texto-suave); cursor: pointer; }
+.solo-mov input { width: 18px; height: 18px; accent-color: var(--acento); }
+
+.resumen-cat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.resumen-cat .tarjeta { padding: 14px 18px; }
+.resumen-cat strong { display: block; font-size: 26px; margin-top: 2px; }
+.rojo { color: var(--peligro); }
+
+.lista-control { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.cerrado { height: 40px; padding: 0 14px; font-size: 13.5px; }
+.lista-control li { display: grid; grid-template-columns: minmax(200px, 1fr) repeat(4, 96px); align-items: center; gap: 12px; padding: 12px 16px 12px 20px; }
+.cabeza-lista { padding-top: 0 !important; padding-bottom: 2px !important; font-size: 13px; font-weight: 600; color: var(--texto-tenue); }
+.cabeza-lista span:not(:first-child) { text-align: center; }
+.nombre strong { display: block; font-size: 15.5px; }
+.nombre span { font-size: 13.5px; }
+.cifra { text-align: center; font-family: var(--fuente-mono); font-size: 17px; }
+.cifra.entra { color: var(--exito); }
+.cifra.sale { color: var(--peligro); }
+.cifra.total { font-weight: 700; font-size: 19px; }
+.botones { display: flex; gap: 8px; }
+.lista-control .vacio { display: block; }
+
+@media (max-width: 1100px) {
+  .lista-control li { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cabeza-lista { display: none !important; }
+  .nombre, .botones { grid-column: 1 / -1; }
+  .cifra::before { content: attr(data-et); display: block; font-family: var(--fuente); font-size: 12px; color: var(--texto-tenue); }
+  .botones .btn { flex: 1; }
+}
+
+.hoja-control + .hoja-control { break-before: page; page-break-before: always; }
+/* La hoja oficial no hereda la altura de fila de las tablas de pantalla */
+.hc-tabla tbody td { height: auto; padding: 4px 6px; color: #000; }
+.hc-tabla tbody tr:hover td { background: none; }
+
 @media print {
   .no-imprimir, .barra-lateral, .encabezado,
   .titulo-seccion, .barra-control, .pista { display: none !important; }

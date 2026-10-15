@@ -1,4 +1,7 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// DATE se entrega como texto AAAA-MM-DD para evitar corrimientos por zona horaria
+types.setTypeParser(1082, (v) => v);
 require('dotenv').config();
 
 const pool = new Pool({

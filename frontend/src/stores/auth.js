@@ -10,6 +10,11 @@ export const useAuthStore = defineStore('auth', () => {
     const autenticado = computed(() => !!token.value);
     const esAdministrador = computed(() => usuario.value?.rol === 'administrador');
     const esOperativo = computed(() => usuario.value?.rol === 'operativo');
+    // Cabina: inicia boletas y registra regresos. Dirección: solo consulta.
+    const esCabina = esOperativo;
+    const esDireccion = computed(() => usuario.value?.rol === 'direccion');
+    const puedeEditar = computed(() => !esDireccion.value);
+    const nombreRol = computed(() => ({ administrador: 'Administración', operativo: 'Cabina', direccion: 'Dirección' })[usuario.value?.rol] || '');
     const iniciales = computed(() => {
         if (!usuario.value?.nombre) return '';
         return usuario.value.nombre
@@ -52,7 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     return {
         usuario, token, cargando,
-        autenticado, esAdministrador, esOperativo, iniciales,
+        autenticado, esAdministrador, esOperativo, esCabina, esDireccion, puedeEditar, nombreRol, iniciales,
         restaurar, iniciarSesion, cerrarSesion
     };
 });

@@ -6,11 +6,8 @@ export const useTemaStore = defineStore('tema', () => {
 
     const cargar = () => {
         const guardado = localStorage.getItem('tema');
-        if (guardado) {
-            oscuro.value = guardado === 'oscuro';
-        } else {
-            oscuro.value = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        }
+        // Claro por omisión: es el que se lee mejor de día y se parece a la hoja impresa
+        oscuro.value = guardado === 'oscuro';
         aplicar();
     };
 

@@ -1,279 +1,276 @@
 <template>
   <div class="animar">
-    <div v-if="cargando" class="tarjeta estado-carga">
-      <span class="cargador cargador-oscuro"></span>
-      <p>Cargando servicio</p>
-    </div>
+    <div v-if="cargando" class="vacio"><span class="cargador cargador-oscuro" style="display:inline-block"></span></div>
 
     <template v-else-if="s">
-      <div class="titulo-seccion fila-entre no-imprimir">
-        <div class="fila">
-          <router-link to="/historial" class="btn btn-plano btn-icono" title="Regresar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
-            </svg>
-          </router-link>
-          <div>
-            <h1>Servicio {{ s.numero_control }}</h1>
-            <p class="sub">{{ nombreTipo }} · {{ formatoFecha(s.fecha) }}</p>
-          </div>
+      <div class="titulo-seccion no-imprimir">
+        <div>
+          <router-link to="/historial" class="volver"><Icono nombre="flecha_izq" :tam="13" />Historial</router-link>
+          <h1><span v-if="s.numero_control" class="mono">{{ s.numero_control }}</span><template v-else>Boleta sin número</template></h1>
+          <p class="sub">
+            <span class="etiqueta" :class="CLASE_ESTADO[s.estado]">{{ catalogos.nombreEstado(s.estado) }}</span>
+            <span class="tipo" :class="`tipo-${s.tipo_servicio}`">{{ nombreTipo(s.tipo_servicio) }}</span>
+            · {{ fechaLarga(s.fecha) }}<template v-if="s.hora_salida">, salida {{ hora(s.hora_salida) }}</template>
+            · registrada por {{ s.registrado_por }}
+          </p>
         </div>
-        <button class="btn btn-primario" @click="imprimir">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 6 2 18 2 18 9"/>
-            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
-            <rect x="6" y="14" width="12" height="8"/>
-          </svg>
-          <span>Imprimir boleta</span>
-        </button>
+        <div class="acciones">
+          <button v-if="auth.esAdministrador && s.estado !== 'anulada'" class="btn btn-plano" @click="modalAnular = true">
+            <Icono nombre="anular" :tam="15" />Anular
+          </button>
+          <button v-if="auth.esAdministrador && ['completa', 'firmada'].includes(s.estado)" class="btn btn-plano" @click="abrirCertificar">
+            <Icono nombre="boleta" :tam="15" />Copia certificada
+          </button>
+          <router-link v-if="editable && auth.puedeEditar" :to="`/boleta/${s.id}`" class="btn btn-secundario">
+            <Icono nombre="editar" :tam="15" />{{ s.estado === 'completa' ? 'Corregir' : 'Completar' }}
+          </router-link>
+          <button v-if="auth.esAdministrador && s.estado === 'completa'" class="btn btn-secundario" :disabled="procesando" @click="firmar">
+            <Icono nombre="check" :tam="15" />Marcar como firmada
+          </button>
+          <button v-if="['completa', 'firmada'].includes(s.estado) && auth.puedeEditar" class="btn btn-primario" @click="imprimir"><Icono nombre="imprimir" :tam="15" />Imprimir boleta</button>
+        </div>
       </div>
 
-      <div class="tarjeta vista-boleta">
-        <div class="tarjeta-cuerpo">
-          <div class="boleta-encabezado">
-            <img src="/LogoBomberos.png" alt="Logo" />
-            <div>
-              <h2>BENEMÉRITO CUERPO VOLUNTARIO DE BOMBEROS DE GUATEMALA</h2>
-              <h3>{{ tituloBoleta }}</h3>
-            </div>
-          </div>
-
-          <div class="grupo">
-            <div class="linea"><span>Control No.</span><b>{{ v(s.numero_control) }}</b></div>
-            <div class="linea"><span>Minutos trabajados</span><b>{{ v(s.minutos_trabajados) }}</b></div>
-            <div class="linea"><span>Fecha</span><b>{{ formatoFecha(s.fecha) }}</b></div>
-            <div class="linea"><span>Solicitud por teléfono</span><b>{{ v(s.solicitud_por_telefono) }}</b></div>
-            <div class="linea"><span>Personal</span><b>{{ v(s.personal) }}</b></div>
-            <div class="linea"><span>Salida de</span><b>{{ v(s.salida_de) }}</b></div>
-            <div class="linea"><span>Hora de salida</span><b>{{ v(s.hora_salida) }}</b></div>
-            <div class="linea"><span>Entrada a</span><b>{{ v(s.entrada_a) }}</b></div>
-            <div class="linea"><span>Hora de entrada</span><b>{{ v(s.hora_entrada) }}</b></div>
-            <div class="linea ancha"><span>Dirección</span><b>{{ v(s.direccion) }}</b></div>
-            <div class="linea"><span>Zona o sector</span><b>{{ v(s.zona) }}</b></div>
-            <div class="linea ancha"><span>Solicitante</span><b>{{ v(s.solicitante) }}</b></div>
-          </div>
-
-          <!-- ── AMBULANCIA ── -->
-          <template v-if="s.tipo_servicio === 'ambulancia'">
-            <h4 class="seccion">Datos del paciente</h4>
-            <div class="grupo">
-              <div class="linea ancha"><span>Nombre de los pacientes</span><b>{{ v(d.nombres_pacientes) }}</b></div>
-              <div class="linea"><span>Fallecidos</span><b>{{ d.hubo_fallecidos ? 'Sí' : 'No' }}</b></div>
-              <div class="linea"><span>Nombre de fallecidos</span><b>{{ v(d.fallecidos) }}</b></div>
-              <div class="linea"><span>Edades</span><b>{{ v(d.edades) }}</b></div>
-              <div class="linea ancha"><span>Domicilios</span><b>{{ v(d.domicilios) }}</b></div>
-              <div class="linea ancha"><span>Acompañantes</span><b>{{ v(d.acompanantes) }}</b></div>
-            </div>
-            <h4 class="seccion">Tipo de servicio</h4>
-            <div class="grupo">
-              <div class="linea"><span>Servicio por maternidad</span><b>{{ v(d.serv_maternidad) }}</b></div>
-              <div class="linea"><span>Accidente de tránsito</span><b>{{ v(d.acc_transito) }}</b></div>
-              <div class="linea"><span>Accidente de trabajo</span><b>{{ v(d.acc_trabajo) }}</b></div>
-              <div class="linea ancha"><span>Otros</span><b>{{ v(d.otros) }}</b></div>
-            </div>
-            <h4 class="seccion">Traslado</h4>
-            <div class="grupo">
-              <div class="linea"><span>Hospital Modular</span><b>{{ v(d.hosp_modular) }}</b></div>
-              <div class="linea"><span>Hospital Privado</span><b>{{ v(d.hosp_privado) }}</b></div>
-              <div class="linea"><span>Hospital I.G.S.S.</span><b>{{ v(d.hosp_igss) }}</b></div>
-              <div class="linea"><span>Otros</span><b>{{ v(d.otro_traslado) }}</b></div>
-            </div>
-          </template>
-
-          <!-- ── INCENDIO ── -->
-          <template v-else-if="s.tipo_servicio === 'incendio'">
-            <h4 class="seccion">Propiedad inmueble</h4>
-            <div class="grupo">
-              <div class="linea ancha"><span>Propietario</span><b>{{ v(d.prop_propietario) }}</b></div>
-              <div class="linea ancha"><span>Sitio donde principió</span><b>{{ v(d.sitio_inicio) }}</b></div>
-              <div class="linea ancha"><span>Causas</span><b>{{ v(d.causas) }}</b></div>
-              <div class="linea"><span>Valor del inmueble</span><b>{{ q(d.valor_inmueble) }}</b></div>
-              <div class="linea"><span>Monto de pérdidas</span><b>{{ q(d.perdidas_inmueble) }}</b></div>
-              <div class="linea"><span>Compañía aseguradora</span><b>{{ v(d.aseguradora_inmueble) }}</b></div>
-            </div>
-            <h4 class="seccion">Datos del vehículo</h4>
-            <div class="grupo">
-              <div class="linea"><span>Propietario</span><b>{{ v(d.veh_propietario) }}</b></div>
-              <div class="linea"><span>Conductor</span><b>{{ v(d.conductor) }}</b></div>
-              <div class="linea"><span>Descripción tipo</span><b>{{ v(d.descripcion_tipo) }}</b></div>
-              <div class="linea"><span>Marca</span><b>{{ v(d.marca) }}</b></div>
-              <div class="linea"><span>Modelo</span><b>{{ v(d.modelo) }}</b></div>
-              <div class="linea"><span>Placas</span><b>{{ v(d.placas) }}</b></div>
-              <div class="linea"><span>Valor aproximado</span><b>{{ q(d.valor_vehiculo) }}</b></div>
-              <div class="linea"><span>Pérdidas aprox.</span><b>{{ q(d.perdidas_vehiculo) }}</b></div>
-              <div class="linea"><span>Compañía aseguradora</span><b>{{ v(d.aseguradora_vehiculo) }}</b></div>
-            </div>
-          </template>
-
-          <!-- ── RESCATE ── -->
-          <template v-else-if="s.tipo_servicio === 'rescate'">
-            <h4 class="seccion">Datos del rescate</h4>
-            <div class="grupo">
-              <div class="linea ancha"><span>Forma de aviso por teléfono</span><b>{{ v(d.forma_aviso) }}</b></div>
-              <div class="linea ancha"><span>Nombre de los rescatados</span><b>{{ v(d.nombres_rescatados) }}</b></div>
-              <div class="linea"><span>Edades</span><b>{{ v(d.edades) }}</b></div>
-              <div class="linea ancha"><span>Con domicilio en</span><b>{{ v(d.domicilios) }}</b></div>
-              <div class="linea ancha"><span>Traslado a</span><b>{{ v(d.traslado_a) }}</b></div>
-            </div>
-          </template>
-
-          <!-- ── VARIOS ── -->
-          <template v-else-if="s.tipo_servicio === 'varios'">
-            <h4 class="seccion">Clase de servicio</h4>
-            <div class="grupo">
-              <div class="linea ancha"><span>Clase de servicio</span><b>{{ v(d.clase_servicio) }}</b></div>
-            </div>
-          </template>
-
-          <!-- ── AGUA ── -->
-          <template v-else-if="s.tipo_servicio === 'agua'">
-            <h4 class="seccion">Datos del beneficiario</h4>
-            <div class="grupo">
-              <div class="linea ancha"><span>Residencia</span><b>{{ v(d.residencia) }}</b></div>
-              <div class="linea ancha"><span>Nombre del establecimiento</span><b>{{ v(d.nombre_establecimiento) }}</b></div>
-              <div class="linea ancha"><span>Centro asistencial</span><b>{{ v(d.centro_asistencial) }}</b></div>
-              <div class="linea"><span>Colonia</span><b>{{ v(d.colonia) }}</b></div>
-              <div class="linea ancha"><span>Nota</span><b>{{ v(d.nota) }}</b></div>
-            </div>
-            <h4 class="seccion">Distribución y donativo</h4>
-            <div class="grupo">
-              <div class="linea ancha"><span>Servicio autorizado por</span><b>{{ v(d.servicio_autorizado_por) }}</b></div>
-              <div class="linea"><span>Galones distribuidos</span><b>{{ v(d.galones_distribuidos) }}</b></div>
-              <div class="linea ancha"><span>Forma en que se distribuyó</span><b>{{ v(d.forma_distribucion) }}</b></div>
-              <div class="linea"><span>Donativo</span><b>{{ q(d.donativo) }}</b></div>
-              <div class="linea ancha"><span>En letras</span><b>{{ v(d.donativo_letras) }}</b></div>
-            </div>
-          </template>
-
-          <h4 class="seccion">Personal y unidad</h4>
-          <div class="grupo">
-            <div class="linea"><span>Radiotelefonista</span><b>{{ v(s.radiotelefonista) }}</b></div>
-            <div class="linea"><span>Piloto</span><b>{{ v(s.piloto) }}</b></div>
-            <div class="linea"><span>Unidad</span><b>{{ v(s.unidad) }}</b></div>
-            <div class="linea ancha"><span>Personal destacado</span><b>{{ v(s.personal_destacado) }}</b></div>
-          </div>
-
-          <h4 class="seccion">Observaciones</h4>
-          <p class="observaciones">{{ v(s.observaciones) }}</p>
-
-                    <template v-if="s.tipo_servicio === 'incendio'">
-            <div class="firmas firmas-dos">
-              <div>
-                <p class="firma-valor">{{ v(s.responsable) }}</p>
-                <div class="raya"></div>
-                <span>Responsable</span>
-              </div>
-              <div>
-                <p class="firma-valor">{{ v(s.jefes_servicio) }}</p>
-                <div class="raya"></div>
-                <span>Jefes de Servicio</span>
-              </div>
-            </div>
-          </template>
-
-          <template v-else>
-            <div class="firmas">
-              <div>
-                <p class="firma-valor">{{ v(s.reporte_formulado_por) }}</p>
-                <div class="raya"></div>
-                <span>Reporte formulado por</span>
-              </div>
-              <div>
-                <p class="firma-valor">{{ v(s.conforme_piloto) }}</p>
-                <div class="raya"></div>
-                <span>Es conforme el piloto</span>
-              </div>
-              <div>
-                <p class="firma-valor">{{ v(s.vobo_jefe_servicio) }}</p>
-                <div class="raya"></div>
-                <span>Vo. Bo. Jefe de Servicio</span>
-              </div>
-            </div>
-
-            <div v-if="llevaCertificacion" class="certificacion">
-              <p class="razon">
-                Razón: la pone la Secretaría Ejecutiva del Cuerpo, para que conste que en
-                esta fecha y a solicitud se extiende copia certificada de este reporte a
-                Sr. (a) (ita): <strong>{{ v(s.copia_certificada_a) }}</strong>
-              </p>
-              <p class="lugar-fecha">
-                Guatemala, {{ fechaCertificacion }}
-              </p>
-              <div class="firma-secretaria">
-                <div class="raya"></div>
-                <span>{{ s.tipo_servicio === 'rescate' ? 'Secretaría Ejecutiva' : 'Secretaria' }}</span>
-              </div>
-            </div>
-          </template>
-
-         
+      <div v-if="s.estado === 'anulada'" class="aviso aviso-peligro mb no-imprimir">
+        <Icono nombre="anular" />
+        <div>
+          <strong>Boleta anulada</strong> el {{ fechaHora(s.anulada_en) }} por {{ s.anulada_por_nombre }}.
+          Motivo: {{ s.motivo_anulacion }}. No cuenta en estadísticas ni en el análisis.
         </div>
+      </div>
+
+      <div v-if="s.estado === 'en_curso'" class="aviso aviso-info mb no-imprimir">
+        <Icono nombre="ambulancia" :tam="20" />
+        <div><strong>La unidad todavía no regresa.</strong> La boleta recibirá su número cuando se registre el regreso desde Inicio.</div>
+      </div>
+      <div v-else-if="s.estado === 'pendiente'" class="aviso aviso-alerta mb no-imprimir">
+        <Icono nombre="alerta" :tam="20" />
+        <div><strong>Por completar.</strong> Falta: {{ s.faltantes.map(f => f.etiqueta.toLowerCase()).join(', ') }}.
+          Solo la tripulación ({{ s.tripulacion.map(p => p.nombre_completo).join(', ') || 'sin registrar' }}) puede completarla con su PIN.</div>
+      </div>
+      <div v-else-if="s.estado === 'firmada'" class="aviso aviso-exito mb no-imprimir">
+        <Icono nombre="check" :tam="20" />
+        <div><strong>Firmada</strong>{{ s.firmada_en ? ` el ${fechaHora(s.firmada_en)}` : '' }}{{ s.firmada_por_nombre ? ` · revisada por ${s.firmada_por_nombre}` : '' }}. Ya no se modifica; si tiene un error, se anula con motivo.</div>
+      </div>
+
+      <div class="detalle-rejilla">
+        <div class="envoltura-boleta">
+          <BoletaImpresa :datos="{ ...s, ...s.detalle }" />
+        </div>
+
+        <aside class="lateral-detalle no-imprimir">
+          <section class="tarjeta">
+            <div class="tarjeta-cabecera"><h3>Clasificación</h3></div>
+            <dl class="ficha-datos">
+              <div><dt>Sector</dt><dd :class="{ falta: !s.sector }">{{ s.sector || 'Sin sector asignado' }}</dd></div>
+              <div v-if="s.lugar_critico"><dt>Lugar crítico</dt><dd>{{ s.lugar_critico }}</dd></div>
+              <div><dt>Causa</dt><dd :class="{ falta: !s.subtipo }">{{ catalogos.nombreSubtipo(s.tipo_servicio, s.subtipo) }}</dd></div>
+              <div><dt>Tripulación</dt><dd>{{ s.tripulacion.map(p => p.nombre_completo).join(', ') || '—' }}</dd></div>
+              <div><dt>Unidad</dt><dd class="mono">{{ s.unidad || '—' }}</dd></div>
+              <div><dt>Piloto</dt><dd>{{ s.piloto || '—' }}</dd></div>
+              <div><dt>Tiempo</dt><dd class="mono">{{ minutos(s.minutos_trabajados) }}</dd></div>
+            </dl>
+          </section>
+
+          <section class="tarjeta">
+            <div class="tarjeta-cabecera">
+              <h3>Insumos utilizados</h3>
+            </div>
+            <div v-if="!s.insumos.length" class="vacio vacio-compacto">
+              <p>No se registraron insumos en este servicio.</p>
+            </div>
+            <ul v-else class="lista-consumo">
+              <li v-for="i in s.insumos" :key="i.id">
+                <div>
+                  <span class="celda-principal">{{ i.nombre }}</span>
+                  <span class="celda-sec mono">{{ i.numero_lote ? `Lote ${i.numero_lote}` : 'Sin lote' }}{{ i.fecha_vencimiento ? ` · vence ${fecha(i.fecha_vencimiento)}` : '' }}</span>
+                </div>
+                <span class="mono cant">{{ i.cantidad }} <small>{{ i.unidad_medida }}</small></span>
+              </li>
+            </ul>
+          </section>
+
+          <section v-if="s.certificaciones.length" class="tarjeta">
+            <div class="tarjeta-cabecera"><h3>Copias certificadas</h3></div>
+            <ul class="lista-consumo">
+              <li v-for="c in s.certificaciones" :key="c.id">
+                <div><span class="celda-principal">{{ c.solicitante }}</span><span class="celda-sec">{{ c.destino || 'Sin destino indicado' }} · {{ fecha(c.fecha) }} · {{ c.emitida_por }}</span></div>
+              </li>
+            </ul>
+          </section>
+
+          <section class="tarjeta">
+            <div class="tarjeta-cabecera"><h3>Historial de la boleta</h3></div>
+            <ol class="linea-tiempo">
+              <li v-for="(h, i) in s.historial" :key="i">
+                <span class="marca-t"></span>
+                <div>
+                  <strong>{{ ACCIONES[h.accion] || h.accion }}</strong>
+                  <span class="celda-sec">{{ h.usuario }} · {{ fechaHora(h.creado_en) }}</span>
+                  <p v-if="h.detalle?._por?.nombre" class="celda-sec">por {{ h.detalle._por.nombre }} (tripulación)</p>
+                  <ul v-if="['editar', 'completar'].includes(h.accion) && h.detalle" class="cambios">
+                    <li v-for="(c, campo) in cambiosDe(h.detalle)" :key="campo">
+                      <span class="mono">{{ campo }}</span>: <s>{{ c.antes || '∅' }}</s> → {{ c.despues || '∅' }}
+                    </li>
+                  </ul>
+                  <p v-else-if="h.detalle?.insumo" class="celda-sec">{{ h.detalle.insumo }} × {{ h.detalle.cantidad }}</p>
+                  <p v-else-if="h.detalle?.motivo" class="celda-sec">{{ h.detalle.motivo }}</p>
+                </div>
+              </li>
+              <li v-if="!s.historial.length">
+                <span class="marca-t"></span>
+                <div><strong>Registrada</strong><span class="celda-sec">{{ s.registrado_por }} · {{ fechaHora(s.creado_en) }}</span></div>
+              </li>
+            </ol>
+          </section>
+        </aside>
       </div>
     </template>
+
+    <Modal v-model="modalAnular" titulo="Anular boleta" ancho="460px">
+      <p class="suave mb">La boleta <strong class="mono">{{ s?.numero_control }}</strong> se conservará marcada como anulada y dejará de contar en estadísticas.
+        <template v-if="s?.insumos.length"> Sus {{ s.insumos.length }} consumo(s) de insumos se devolverán al inventario.</template></p>
+      <div class="campo">
+        <label for="motivo-a">Motivo de la anulación <span class="req">*</span></label>
+        <textarea id="motivo-a" v-model="motivoAnular" class="control" placeholder="Ej.: boleta duplicada del control 2026-0148"></textarea>
+      </div>
+      <template #acciones>
+        <button class="btn btn-secundario" @click="modalAnular = false">Cancelar</button>
+        <button class="btn btn-peligro" :disabled="motivoAnular.trim().length < 10 || procesando" @click="anular">Anular boleta</button>
+      </template>
+    </Modal>
+
+    <Modal v-model="modalCertificar" titulo="Copia certificada" ancho="460px">
+      <p class="suave mb">Se registra a quién se entrega y se imprime la boleta con la razón de la Secretaría Ejecutiva.</p>
+      <div class="campo"><label for="cert-a">A nombre de <span class="req">*</span></label><input id="cert-a" v-model="cert.solicitante" class="control" /></div>
+      <div class="campo"><label for="cert-d">Para qué o para quién</label><input id="cert-d" v-model="cert.destino" class="control" placeholder="Ej.: aseguradora, Ministerio Público, familiar" /></div>
+      <div class="campo"><label for="cert-f">Fecha</label><input id="cert-f" v-model="cert.fecha" type="date" class="control mono" /></div>
+      <template #acciones>
+        <button class="btn btn-secundario" @click="modalCertificar = false">Cancelar</button>
+        <button class="btn btn-primario" :disabled="!cert.solicitante.trim() || procesando" @click="certificar">Registrar e imprimir</button>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { emergencias } from '../services/api';
+import { emergencias, mensajeError } from '../services/api';
 import { useNotificacionesStore } from '../stores/notificaciones';
+import { useAuthStore } from '../stores/auth';
+import { useAlertasStore } from '../stores/alertas';
+import { useImpresionStore } from '../stores/impresion';
+import { useCatalogosStore, nombreTipo, TIPOS } from '../stores/catalogos';
+import { fecha, fechaLarga, fechaHora, hora, minutos, quetzales, hoy } from '../utils/formato';
+import Modal from '../components/Modal.vue';
+import Icono from '../components/Icono.vue';
+import BoletaImpresa from '../components/BoletaImpresa.vue';
 
-const ruta  = useRoute();
+const ruta = useRoute();
 const notif = useNotificacionesStore();
+const auth = useAuthStore();
+const alertas = useAlertasStore();
+const impresion = useImpresionStore();
+const catalogos = useCatalogosStore();
+
+const ACCIONES = {
+  crear: 'Llamada registrada', regreso: 'Regreso de la unidad (número asignado)', editar: 'Editada', completar: 'Completada',
+  firmar: 'Firmada', certificar: 'Copia certificada', anular: 'Anulada', cerrar: 'Servicio cerrado',
+  agregar_insumo: 'Insumo agregado', quitar_insumo: 'Insumo retirado'
+};
+const CLASE_ESTADO = { en_curso: 'et-info', pendiente: 'et-alerta', completa: 'et-neutra', firmada: 'et-exito', anulada: 'et-peligro' };
+const cambiosDe = (detalle) => Object.fromEntries(Object.entries(detalle).filter(([k, v]) => k !== '_por' && v && typeof v === 'object' && 'antes' in v));
 
 const s = ref(null);
 const cargando = ref(true);
+const procesando = ref(false);
+const modalAnular = ref(false);
+const motivoAnular = ref('');
+const modalCertificar = ref(false);
+const cert = reactive({ solicitante: '', destino: '', fecha: hoy() });
+const editable = computed(() => ['en_curso', 'pendiente', 'completa'].includes(s.value?.estado));
 
 const d = computed(() => s.value?.detalle || {});
-
-const TITULOS = {
-  ambulancia: 'REPORTE DE AMBULANCIA',
-  incendio:   'REPORTE DE INCENDIO',
-  rescate:    'SERVICIO DE RESCATE',
-  varios:     'REPORTE DE SERVICIOS VARIOS',
-  agua:       'REPORTE DE SERVICIOS DE AGUA'
-};
-const NOMBRES = {
-  ambulancia: 'Servicio de ambulancia', incendio: 'Servicio de incendio',
-  rescate: 'Servicio de rescate', varios: 'Servicios varios', agua: 'Servicio de agua'
-};
-
-const tituloBoleta = computed(() => TITULOS[s.value?.tipo_servicio] || '');
-const nombreTipo   = computed(() => NOMBRES[s.value?.tipo_servicio] || '');
-const llevaCertificacion = computed(() =>
-  ['ambulancia','rescate','varios'].includes(s.value?.tipo_servicio)
-);
-
-const fechaCertificacion = computed(() => {
-  const f = s.value?.fecha_certificacion;
-  if (!f) return '_____ de ___________________ de 20____';
-  const d = new Date(f);
-  const meses = ['enero','febrero','marzo','abril','mayo','junio',
-                 'julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  return `${d.getUTCDate()} de ${meses[d.getUTCMonth()]} de ${d.getUTCFullYear()}`;
-});
+const tituloBoleta = computed(() => TIPOS.find(t => t.valor === s.value?.tipo_servicio)?.titulo || '');
+const llevaCertificacion = computed(() => ['ambulancia', 'rescate', 'varios'].includes(s.value?.tipo_servicio));
+const fechaCertificacion = computed(() => s.value?.fecha_certificacion ? fechaLarga(s.value.fecha_certificacion) : '_____ de ___________________ de 20____');
 
 const v = (x) => (x === null || x === undefined || x === '') ? '—' : x;
-const q = (x) => (x === null || x === undefined) ? '—' : `Q ${Number(x).toFixed(2)}`;
+const q = (x) => quetzales(x);
+const formatoFecha = fechaLarga;
 
-const formatoFecha = (f) => {
-  if (!f) return '—';
-  return new Date(f).toLocaleDateString('es-GT',
-    { day:'2-digit', month:'long', year:'numeric', timeZone:'UTC' });
+// Imprime en el formato oficial y la marca como impresa
+const imprimir = async () => {
+  try {
+    await impresion.imprimir(s.value.id);
+    await cargar();
+  } catch (e) {
+    notif.error(mensajeError(e, 'No se pudo preparar la impresión'));
+  }
 };
 
-const imprimir = () => window.print();
-
-onMounted(async () => {
+const cargar = async () => {
   try {
     const { data } = await emergencias.obtener(ruta.params.id);
     s.value = data;
-  } catch {
-    notif.error('No se pudo cargar el servicio');
+  } catch (e) {
+    notif.error(mensajeError(e, 'No se pudo cargar la boleta'));
   } finally {
     cargando.value = false;
   }
+};
+
+const anular = async () => {
+  procesando.value = true;
+  try {
+    const { data } = await emergencias.anular(s.value.id, motivoAnular.value.trim());
+    notif.exito(data.mensaje);
+    modalAnular.value = false;
+    alertas.cargar();
+    await cargar();
+  } catch (e) {
+    notif.error(mensajeError(e));
+  } finally {
+    procesando.value = false;
+  }
+};
+
+const firmar = async () => {
+  procesando.value = true;
+  try {
+    const { data } = await emergencias.firmar([s.value.id]);
+    notif.exito(data.mensaje);
+    impresion.contarPendientes();
+    await cargar();
+  } catch (e) {
+    notif.error(mensajeError(e));
+  } finally {
+    procesando.value = false;
+  }
+};
+
+const abrirCertificar = () => {
+  Object.assign(cert, { solicitante: '', destino: '', fecha: hoy() });
+  modalCertificar.value = true;
+};
+const certificar = async () => {
+  procesando.value = true;
+  try {
+    await emergencias.certificar(s.value.id, { ...cert });
+    modalCertificar.value = false;
+    await cargar();
+    await impresion.imprimir(s.value.id);
+  } catch (e) {
+    notif.error(mensajeError(e, 'No se pudo registrar la copia certificada'));
+  } finally {
+    procesando.value = false;
+  }
+};
+
+onMounted(() => {
+  catalogos.cargar().catch(() => {});
+  cargar();
 });
 </script>
 
@@ -413,5 +410,52 @@ onMounted(async () => {
   .vista-boleta { width: 100%; height: auto; padding: 20px; overflow: visible; }
   .grupo { flex: none; align-content: start; gap: 12px 16px; }
   .observaciones { flex: none; min-height: 80px; }
+}
+
+/* ── Composición de la vista ───────────────────── */
+.volver {
+  display: inline-flex; align-items: center; gap: 5px; margin-bottom: 6px;
+  font-size: 12px; font-weight: 600; color: var(--texto-tenue); text-decoration: none;
+}
+.volver:hover { color: var(--texto); }
+.titulo-seccion h1 .mono { font-weight: 600; letter-spacing: -.02em; }
+.titulo-seccion .sub .tipo { vertical-align: -1px; }
+
+.detalle-rejilla {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px; align-items: start;
+}
+.envoltura-boleta { min-width: 0; overflow-x: auto; }
+.lateral-detalle { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 72px; }
+
+.ficha-datos { padding: 6px 16px 10px; }
+.ficha-datos div { display: grid; grid-template-columns: 82px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--borde); font-size: 13px; }
+.ficha-datos div:last-child { border-bottom: none; }
+.ficha-datos dt { color: var(--texto-tenue); font-size: 12px; }
+.ficha-datos dd { font-weight: 600; }
+.ficha-datos dd.falta { color: var(--alerta); }
+
+.vacio-compacto { padding: 18px 16px; }
+.lista-consumo { list-style: none; }
+.lista-consumo li { display: grid; grid-template-columns: 1fr auto 28px; gap: 8px; align-items: center; padding: 9px 12px 9px 16px; border-bottom: 1px solid var(--borde); font-size: 13px; }
+.lista-consumo li:last-child { border-bottom: none; }
+.cant { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.cant small { font-weight: 400; color: var(--texto-tenue); font-size: 11px; }
+
+.linea-tiempo { list-style: none; padding: 12px 16px 6px; }
+.linea-tiempo > li { position: relative; display: grid; grid-template-columns: 14px 1fr; gap: 10px; padding-bottom: 14px; font-size: 13px; }
+.linea-tiempo > li:not(:last-child)::before { content: ''; position: absolute; left: 4px; top: 14px; bottom: 0; width: 1px; background: var(--borde-fuerte); }
+.marca-t { width: 9px; height: 9px; margin-top: 4px; border: 2px solid var(--texto-suave); border-radius: 2px; background: var(--superficie); }
+.cambios { list-style: none; margin-top: 5px; font-size: 11.5px; color: var(--texto-suave); display: flex; flex-direction: column; gap: 2px; }
+.cambios .mono { font-size: 10.5px; color: var(--texto-tenue); }
+.cambios s { color: var(--texto-tenue); }
+
+@media (max-width: 1400px) {
+  .detalle-rejilla { grid-template-columns: 1fr; }
+  .lateral-detalle { position: static; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); width: min(21.6cm, 100%); margin: 0 auto; }
+}
+@media print {
+  .detalle-rejilla { display: block; }
 }
 </style>

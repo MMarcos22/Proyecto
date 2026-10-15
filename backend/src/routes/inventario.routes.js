@@ -1,29 +1,30 @@
 const express = require('express');
 const router = express.Router();
 
-const {
-    listarInsumos, obtenerAlertas, alertasDetalladas,
-    registrarEntrada, registrarSalida, listarMovimientos,
-    crearInsumo, editarInsumo, eliminarInsumo,
-    movimientosDeInsumo, editarMovimiento, eliminarMovimiento
-} = require('../controllers/inventarioController');
-
+const c = require('../controllers/inventarioController');
 const { verificarToken } = require('../middleware/auth');
-const { soloOperativo, ambosRoles } = require('../middleware/roles');
+const d = require('../controllers/documentosController');
+const { soloAdministrador, todosLosRoles, gestion } = require('../middleware/roles');
 
-router.use(verificarToken);
+// Consultar existencias: todos (la cabina las ve al registrar insumos usados).
+// Mover bodega: solo administración (la encargada, en horario de oficina).
+router.use(verificarToken, todosLosRoles);
 
-router.get('/', ambosRoles, listarInsumos);
-router.get('/alertas', ambosRoles, obtenerAlertas);
-router.get('/alertas/detalle', ambosRoles, alertasDetalladas);
-router.get('/movimientos', ambosRoles, listarMovimientos);
-router.get('/movimientos/insumo/:id', ambosRoles, movimientosDeInsumo);
-router.post('/entrada', soloOperativo, registrarEntrada);
-router.post('/salida', soloOperativo, registrarSalida);
-router.put('/movimientos/:id', soloOperativo, editarMovimiento);
-router.delete('/movimientos/:id', soloOperativo, eliminarMovimiento);
-router.post('/insumos', soloOperativo, crearInsumo);
-router.put('/insumos/:id', soloOperativo, editarInsumo);
-router.delete('/insumos/:id', soloOperativo, eliminarInsumo);
+router.get('/', c.listarInsumos);
+router.get('/documentos', gestion, d.listar);
+router.get('/documentos/:id', gestion, d.obtener);
+router.post('/documentos', soloAdministrador, d.registrar);
+router.get('/cierres', gestion, d.cierres);
+router.post('/cierres', soloAdministrador, d.cerrarMes);
+router.get('/alertas/detalle', c.alertasDetalladas);
+router.get('/lotes', c.listarLotes);
+router.get('/movimientos', c.listarMovimientos);
+router.get('/kardex/:id', c.kardex);
+router.post('/entrada', soloAdministrador, c.registrarEntrada);
+router.post('/salida', soloAdministrador, c.registrarSalida);
+router.delete('/movimientos/:id', soloAdministrador, c.eliminarMovimiento);
+router.post('/insumos', soloAdministrador, c.crearInsumo);
+router.put('/insumos/:id', soloAdministrador, c.editarInsumo);
+router.delete('/insumos/:id', soloAdministrador, c.eliminarInsumo);
 
 module.exports = router;
