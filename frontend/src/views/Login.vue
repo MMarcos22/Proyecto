@@ -85,7 +85,7 @@ const acceder = async () => {
   const resultado = await auth.iniciarSesion(credenciales);
   if (resultado.ok) {
     const volver = typeof ruta.query.volver === 'string' && ruta.query.volver.startsWith('/') ? ruta.query.volver : null;
-    router.push(volver || (auth.esAdministrador ? '/panel' : '/registrar'));
+    router.push(volver || '/inicio');
   } else {
     errorMensaje.value = resultado.mensaje;
   }

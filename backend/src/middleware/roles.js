@@ -1,6 +1,7 @@
-// Roles (análisis §12):
-//   administrador → Administración: opera todo el sistema
-//   operativo     → Cabina: inicia boletas, registra regresos, completa las propias con PIN
+// Roles (recomendaciones de la compañía, octubre 2026):
+//   cabina        → Cabina: registra llamadas, regresos y completa boletas con el PIN de la tripulación
+//   operativo     → lo de cabina, más existencias, movimientos e informes
+//   administrador → Administración: ve todo; revisa, firma y anula, pero no completa boletas
 //   direccion     → Dirección: consulta todo, no modifica nada
 const permitirRoles = (...rolesPermitidos) => {
     return (req, res, next) => {
@@ -15,12 +16,16 @@ const permitirRoles = (...rolesPermitidos) => {
 };
 
 const soloAdministrador = permitirRoles('administrador');
-// Escribir boletas: administración y cabina
-const ambosRoles = permitirRoles('administrador', 'operativo');
+// Escribir boletas (llamada, regreso, completar): cabina y operativo
+const atiendenServicios = permitirRoles('cabina', 'operativo');
+// Acciones de boleta que también hace la administración (anular un servicio en curso, imprimir)
+const ambosRoles = permitirRoles('administrador', 'operativo', 'cabina');
 // Consultar: cualquiera con sesión
-const todosLosRoles = permitirRoles('administrador', 'operativo', 'direccion');
-// Análisis e informes institucionales: administración y dirección
+const todosLosRoles = permitirRoles('administrador', 'operativo', 'cabina', 'direccion');
+// Análisis institucional, revisión y bitácora: administración y dirección
 const gestion = permitirRoles('administrador', 'direccion');
+// Inventario (consulta) e informes: operativo, administración y dirección
+const consultaInstitucional = permitirRoles('administrador', 'operativo', 'direccion');
 
 // La dirección solo consulta: cualquier escritura se rechaza, salvo cambiar su propia clave
 const soloLecturaDireccion = (req, res, next) => {
@@ -30,4 +35,7 @@ const soloLecturaDireccion = (req, res, next) => {
     next();
 };
 
-module.exports = { permitirRoles, soloAdministrador, ambosRoles, todosLosRoles, gestion, soloLecturaDireccion };
+module.exports = {
+    permitirRoles, soloAdministrador, atiendenServicios, ambosRoles, todosLosRoles, gestion, consultaInstitucional,
+    soloLecturaDireccion
+};

@@ -126,7 +126,7 @@ CREATE TABLE detalle_rescate (
 
 CREATE TABLE detalle_varios (
     emergencia_id  INTEGER PRIMARY KEY REFERENCES emergencias(id) ON DELETE CASCADE,
-    clase_servicio VARCHAR(200) NOT NULL
+    clase_servicio VARCHAR(200)
 );
 
 CREATE TABLE detalle_agua (

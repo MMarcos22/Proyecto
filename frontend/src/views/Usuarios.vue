@@ -22,7 +22,7 @@
               </div>
             </td>
             <td class="mono">{{ u.usuario }}</td>
-            <td>{{ { administrador: 'Administración', operativo: 'Cabina', direccion: 'Dirección' }[u.rol] }}</td>
+            <td>{{ { administrador: 'Administración', operativo: 'Operativo', cabina: 'Cabina', direccion: 'Dirección' }[u.rol] }}</td>
             <td><span class="etiqueta" :class="u.activo ? 'et-exito' : 'et-neutra'">{{ u.activo ? 'Activo' : 'Inactivo' }}</span></td>
             <td class="mono suave">{{ u.ultima_actividad ? fechaHora(u.ultima_actividad) : '—' }}</td>
             <td class="der"><button class="btn btn-plano btn-sm btn-icono" @click="abrir(u)" :aria-label="`Editar ${u.nombre_completo}`"><Icono nombre="editar" :tam="14" /></button></td>
@@ -46,11 +46,14 @@
       </template>
       <template #paso-1>
         <div class="opciones" style="--min-opcion: 260px">
+          <button type="button" class="opcion" :class="{ elegida: form.rol === 'cabina' }" @click="form.rol = 'cabina'">
+            <span>Cabina<small>Solo registra llamadas y regresos; cada bombero completa sus boletas con su PIN</small></span>
+          </button>
           <button type="button" class="opcion" :class="{ elegida: form.rol === 'operativo' }" @click="form.rol = 'operativo'">
-            <span>Cabina<small>Sesión de la computadora de cabina: registra llamadas y regresos; cada bombero completa sus boletas con su PIN</small></span>
+            <span>Operativo<small>Lo de cabina, más existencias y movimientos de inventario, historial de boletas e informes</small></span>
           </button>
           <button type="button" class="opcion" :class="{ elegida: form.rol === 'administrador' }" @click="form.rol = 'administrador'">
-            <span>Administración<small>Inventario, revisión y firma de boletas, informes, catálogos y usuarios</small></span>
+            <span>Administración<small>Todo el sistema: inventario, revisión y firma, análisis, informes y configuración. Ve las boletas por completar, pero no las completa</small></span>
           </button>
           <button type="button" class="opcion" :class="{ elegida: form.rol === 'direccion' }" @click="form.rol = 'direccion'">
             <span>Dirección<small>Consulta boletas, análisis e informes; no puede modificar registros</small></span>
@@ -86,7 +89,7 @@ const notif = useNotificacionesStore();
 const lista = ref([]);
 const modal = ref(false);
 const procesando = ref(false);
-const form = reactive({ nombre_completo: '', usuario: '', rol: 'operativo', password: '', activo: true });
+const form = reactive({ nombre_completo: '', usuario: '', rol: 'cabina', password: '', activo: true });
 const usuarioManual = ref(false);
 
 const pasos = computed(() => [
@@ -114,7 +117,7 @@ const cargar = async () => {
 const abrir = (u = null) => {
   Object.assign(form, u
     ? { id: u.id, nombre_completo: u.nombre_completo, usuario: u.usuario, rol: u.rol, activo: u.activo, password: '' }
-    : { id: null, nombre_completo: '', usuario: '', rol: 'operativo', activo: true, password: '' });
+    : { id: null, nombre_completo: '', usuario: '', rol: 'cabina', activo: true, password: '' });
   usuarioManual.value = false;
   modal.value = true;
 };

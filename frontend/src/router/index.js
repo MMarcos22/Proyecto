@@ -1,10 +1,16 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 
-// Quién puede abrir cada página (sin meta.roles: cualquiera con sesión)
+// Quién puede abrir cada página (sin meta.roles: cualquiera con sesión).
+//   Cabina: Inicio, registrar llamada y completar boleta.
+//   Operativo: lo de cabina, más existencias, movimientos, boletas e informes.
+//   Administración: todo; ve las boletas por completar, pero no las completa.
+//   Dirección: consulta.
 const ADMIN = ['administrador'];
 const GESTION = ['administrador', 'direccion'];
-const OPERAN = ['administrador', 'operativo'];
+const ATIENDEN = ['cabina', 'operativo'];
+const CONSULTAN = ['administrador', 'operativo', 'direccion'];
+const IMPRIMEN = ['administrador', 'operativo', 'cabina'];
 
 // Cada sección es una entrada del menú lateral. Si tiene varias páginas,
 // se muestran como pestañas arriba de la vista; el menú queda corto y cada
@@ -42,31 +48,32 @@ const rutas = [
             vista('inicio', 'inicio', 'Inicio', { seccion: 'inicio', titulo: 'Inicio' }),
 
             vista('revision', 'revision', 'Revision', { seccion: 'boletas', titulo: 'Revisión diaria', pestana: 'Revisión diaria', roles: GESTION }),
-            vista('historial', 'historial', 'Historial', { seccion: 'boletas', titulo: 'Historial', pestana: 'Historial' }),
-            vista('imprimir', 'imprimir', 'Imprimir', { seccion: 'boletas', titulo: 'Por imprimir', pestana: 'Por imprimir', roles: OPERAN }),
+            vista('historial', 'historial', 'Historial', { seccion: 'boletas', titulo: 'Historial', pestana: 'Historial', roles: CONSULTAN }),
+            vista('imprimir', 'imprimir', 'Imprimir', { seccion: 'boletas', titulo: 'Por imprimir', pestana: 'Por imprimir', roles: IMPRIMEN }),
             vista('historial/:id', 'detalle-servicio', 'DetalleServicio', { seccion: 'boletas', titulo: 'Boleta' }),
-            vista('boleta/nueva', 'nueva-boleta', 'NuevaBoleta', { seccion: 'boletas', titulo: 'Registrar llamada', roles: OPERAN }),
-            vista('boleta/:id', 'completar-boleta', 'CompletarBoleta', { seccion: 'boletas', titulo: 'Completar boleta', roles: OPERAN }),
+            vista('boleta/nueva', 'nueva-boleta', 'NuevaBoleta', { seccion: 'boletas', titulo: 'Registrar llamada', roles: ATIENDEN }),
+            vista('boleta/:id', 'completar-boleta', 'CompletarBoleta', { seccion: 'boletas', titulo: 'Completar boleta', roles: ATIENDEN }),
 
             vista('servicios', 'servicios', 'AnalisisServicios', { seccion: 'servicios', titulo: 'Análisis de servicios', roles: GESTION }),
 
-            vista('inventario', 'inventario', 'Inventario', { seccion: 'existencias', titulo: 'Existencias', pestana: 'Insumos' }),
-            vista('lotes', 'lotes', 'Lotes', { seccion: 'existencias', titulo: 'Lotes y vencimientos', pestana: 'Lotes y vencimientos' }),
-            vista('inventario/:id', 'kardex', 'Kardex', { seccion: 'existencias', titulo: 'Movimientos del insumo' }),
-            vista('movimientos', 'movimientos', 'Documentos', { seccion: 'movimientos', titulo: 'Documentos de bodega', pestana: 'Documentos', roles: GESTION }),
-            vista('movimientos/lineas', 'movimientos-lineas', 'Movimientos', { seccion: 'movimientos', titulo: 'Movimientos por línea', pestana: 'Por insumo y lote', roles: GESTION }),
-            vista('control-mensual', 'control-mensual', 'ControlMensual', { seccion: 'informes', titulo: 'Control mensual', roles: GESTION }),
+            vista('inventario', 'inventario', 'Inventario', { seccion: 'existencias', titulo: 'Existencias', pestana: 'Insumos', roles: CONSULTAN }),
+            vista('lotes', 'lotes', 'Lotes', { seccion: 'existencias', titulo: 'Lotes y vencimientos', pestana: 'Lotes y vencimientos', roles: CONSULTAN }),
+            vista('inventario/:id', 'kardex', 'Kardex', { seccion: 'existencias', titulo: 'Movimientos del insumo', roles: CONSULTAN }),
+            vista('movimientos', 'movimientos', 'Documentos', { seccion: 'movimientos', titulo: 'Documentos de bodega', pestana: 'Documentos', roles: CONSULTAN }),
+            vista('movimientos/lineas', 'movimientos-lineas', 'Movimientos', { seccion: 'movimientos', titulo: 'Movimientos por línea', pestana: 'Por insumo y lote', roles: CONSULTAN }),
+            vista('control-mensual', 'control-mensual', 'ControlMensual', { seccion: 'informes', titulo: 'Control mensual', roles: CONSULTAN }),
 
             vista('panel', 'panel', 'Panel', { seccion: 'analisis', titulo: 'Resumen del periodo', pestana: 'Resumen', roles: GESTION }),
             vista('informe-integrado', 'informe-integrado', 'InformeIntegrado', { seccion: 'analisis', titulo: 'Consumo por servicio', pestana: 'Consumo por servicio', roles: GESTION }),
             vista('proyeccion', 'proyeccion', 'Proyeccion', { seccion: 'analisis', titulo: 'Proyección anual', pestana: 'Proyección anual', roles: GESTION }),
             vista('demanda', 'demanda', 'Demanda', { seccion: 'analisis', titulo: 'Demanda y recursos', pestana: 'Demanda y recursos', roles: GESTION }),
 
-            vista('informes', 'informes', 'Informes', { seccion: 'informes', titulo: 'Informes', roles: GESTION }),
-            vista('informes/anual', 'informe-anual', 'InformeAnual', { seccion: 'informes', titulo: 'Resumen anual de inventario', roles: GESTION }),
-            vista('informes/combustible', 'informe-combustible', 'InformeCombustible', { seccion: 'informes', titulo: 'Salidas por unidad', roles: GESTION }),
-            vista('informes/personas', 'informe-personas', 'InformePersonas', { seccion: 'informes', titulo: 'Personas atendidas', roles: GESTION }),
-            vista('informes/totales', 'informe-totales', 'InformeTotales', { seccion: 'informes', titulo: 'Totales por tipo', roles: GESTION }),
+            vista('informes', 'informes', 'Informes', { seccion: 'informes', titulo: 'Informes', roles: CONSULTAN }),
+            vista('informes/anual', 'informe-anual', 'InformeAnual', { seccion: 'informes', titulo: 'Resumen anual de inventario', roles: CONSULTAN }),
+            vista('informes/combustible', 'informe-combustible', 'InformeCombustible', { seccion: 'informes', titulo: 'Salidas por unidad', roles: CONSULTAN }),
+            vista('informes/personas', 'informe-personas', 'InformePersonas', { seccion: 'informes', titulo: 'Personas atendidas', roles: CONSULTAN }),
+            vista('informes/totales', 'informe-totales', 'InformeTotales', { seccion: 'informes', titulo: 'Totales por tipo', roles: CONSULTAN }),
+            vista('informes/servicios', 'informe-servicios', 'InformeServicios', { seccion: 'informes', titulo: 'Servicios atendidos', roles: CONSULTAN }),
 
             vista('catalogos', 'catalogos', 'Catalogos', { seccion: 'configuracion', titulo: 'Catálogos', pestana: 'Catálogos', roles: ADMIN }),
             vista('usuarios', 'usuarios', 'Usuarios', { seccion: 'configuracion', titulo: 'Usuarios', pestana: 'Usuarios', roles: ADMIN }),
@@ -95,6 +102,8 @@ export const paginasVisibles = (clave, rol) => {
 
 router.beforeEach((to) => {
     const auth = useAuthStore();
+    // Una ventana que quedó abierta al cambiar de página no debe dejar la página sin desplazamiento
+    document.body.style.overflow = '';
     if (to.meta.publica) return auth.autenticado ? '/' : true;
     if (!auth.autenticado) return { path: '/login', query: to.fullPath !== '/' ? { volver: to.fullPath } : {} };
     if (!puedeAbrir(to, auth.usuario?.rol)) return '/inicio';

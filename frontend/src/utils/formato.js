@@ -55,6 +55,26 @@ export const numero = (n, dec = 0) =>
 
 export const quetzales = (n) => (n == null ? '—' : `Q ${numero(n, 2)}`);
 
+// Monto con coma de miles y punto decimal, como se escribe en Guatemala: 12,500.50
+export const miles = (entero) => String(entero).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+export const montoTexto = (n, decimales = 2) => {
+    if (n === null || n === undefined || n === '' || Number.isNaN(Number(n))) return '';
+    const [e, d] = Math.abs(Number(n)).toFixed(decimales).split('.');
+    return `${Number(n) < 0 ? '-' : ''}${miles(e)}${d ? `.${d}` : ''}`;
+};
+// Para la boleta impresa: «Q 12,500.00»; un texto («No aplica») se deja tal cual
+export const dinero = (v) => {
+    if (v === null || v === undefined || String(v).trim() === '') return '';
+    return Number.isNaN(Number(v)) ? String(v) : `Q ${montoTexto(v)}`;
+};
+
+// Teléfono de Guatemala: 8 dígitos, «0000 0000»
+export const telefonoTexto = (v) => {
+    const n = String(v ?? '').replace(/\D/g, '').slice(0, 8);
+    return n.length > 4 ? `${n.slice(0, 4)} ${n.slice(4)}` : n;
+};
+export const telefonoCompleto = (v) => String(v ?? '').replace(/\D/g, '').length === 8;
+
 export const minutos = (m) => {
     if (m == null) return '—';
     if (m < 60) return `${m} min`;
@@ -81,6 +101,14 @@ export const periodosRapidos = () => {
     ];
 };
 
+// El mes, trimestre, semestre o año en curso, hasta hoy
+export const periodoActual = (tipo = 'mes') => {
+    const h = hoy();
+    const [a, m] = h.split('-').map(Number);
+    const inicio = { trimestre: Math.floor((m - 1) / 3) * 3 + 1, semestre: m >= 7 ? 7 : 1, anio: 1 }[tipo] || m;
+    return { desde: `${a}-${dos(inicio)}-01`, hasta: h };
+};
+
 export const describirPeriodo = (desde, hasta) => {
     if (!desde || !hasta) return '';
     const a = partes(desde), b = partes(hasta);
@@ -89,6 +117,14 @@ export const describirPeriodo = (desde, hasta) => {
         if (b.d === ultimo || hasta === hoy()) return `${MESES[a.m - 1]} de ${a.a}`;
     }
     if (a.a === b.a && a.m === 1 && a.d === 1 && (hasta === hoy() || (b.m === 12 && b.d === 31))) return `año ${a.a}`;
+    // Trimestre y semestre: empiezan el día 1 y terminan al fin de su último mes (o hoy, si está en curso)
+    const cierra = (mesFinal) => hasta === hoy() || (b.m === mesFinal && b.d === new Date(b.a, mesFinal, 0).getDate());
+    if (a.a === b.a && a.d === 1 && (a.m === 1 || a.m === 7) && b.m <= a.m + 5 && b.m > a.m + 2 && cierra(a.m + 5)) {
+        return `${a.m === 1 ? 'primer' : 'segundo'} semestre de ${a.a}`;
+    }
+    if (a.a === b.a && a.d === 1 && (a.m - 1) % 3 === 0 && b.m <= a.m + 2 && cierra(a.m + 2)) {
+        return `${['primer', 'segundo', 'tercer', 'cuarto'][(a.m - 1) / 3]} trimestre de ${a.a}`;
+    }
     return `${fechaCorta(desde)} – ${fechaCorta(hasta)}`;
 };
 

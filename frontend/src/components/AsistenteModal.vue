@@ -40,7 +40,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import Icono from './Icono.vue';
 
 // pasos: [{ pregunta, ayuda?, valido?: boolean, falta?: string, obligatorio?: boolean }]
@@ -66,6 +66,9 @@ const mensajeFalta = computed(() => (pasoValido.value ? '' : props.pasos[paso.va
 watch(() => props.modelValue, (v) => {
   if (v) { paso.value = 0; direccion.value = 'adelante'; }
   document.body.style.overflow = v ? 'hidden' : '';
+});
+onUnmounted(() => {
+  if (props.modelValue) document.body.style.overflow = '';
 });
 
 const continuar = () => {

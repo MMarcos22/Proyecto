@@ -49,6 +49,20 @@
         </select>
       </div>
       <div class="campo">
+        <label>Personal</label>
+        <select v-model="f.personal_id" class="control control-sm">
+          <option value="">Todo el personal</option>
+          <option v-for="p in personalOrdenado" :key="p.id" :value="String(p.id)">{{ p.nombre_completo }}</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Insumo usado</label>
+        <select v-model="f.insumo_id" class="control control-sm">
+          <option value="">Cualquiera</option>
+          <option v-for="i in insumos" :key="i.id" :value="String(i.id)">{{ i.nombre }}</option>
+        </select>
+      </div>
+      <div class="campo">
         <label>Desde</label>
         <input v-model="f.desde" type="date" class="control control-sm mono" :max="f.hasta || hoy()" />
       </div>
@@ -107,7 +121,7 @@
               <span :class="s.sector ? '' : 'sin-sector'">{{ s.sector || 'Sin sector' }}</span>
               <span class="celda-sec">{{ s.direccion }}</span>
             </td>
-            <td class="mono">{{ s.unidad || '—' }}</td>
+            <td class="mono">{{ s.unidad || '—' }}<span v-if="s.unidades_incidente > 1" class="celda-sec">{{ s.unidades_incidente }} unidades en el incidente</span></td>
             <td><span class="etiqueta" :class="CLASE_ESTADO[s.estado]">{{ catalogos.nombreEstado(s.estado) }}</span></td>
           </tr>
         </tbody>
@@ -126,7 +140,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { emergencias, mensajeError } from '../services/api';
+import { emergencias, inventario, mensajeError } from '../services/api';
 import { useNotificacionesStore } from '../stores/notificaciones';
 import { useCatalogosStore, TIPOS, corteTipo, nombreTipo } from '../stores/catalogos';
 import { fecha, fechaLarga, hora, hoy, describirPeriodo } from '../utils/formato';
@@ -139,10 +153,13 @@ const notif = useNotificacionesStore();
 const catalogos = useCatalogosStore();
 
 const CLASE_ESTADO = { en_curso: 'et-info', pendiente: 'et-alerta', completa: 'et-neutra', firmada: 'et-exito', anulada: 'et-peligro' };
-const CLAVES = ['tipo_servicio', 'subtipo', 'sector_id', 'unidad_id', 'desde', 'hasta', 'estado'];
+const CLAVES = ['tipo_servicio', 'subtipo', 'sector_id', 'unidad_id', 'personal_id', 'insumo_id', 'desde', 'hasta', 'estado'];
+const EXTRA = CLAVES.filter(k => k !== 'tipo_servicio');
 const f = reactive(Object.fromEntries(CLAVES.map(k => [k, ruta.query[k] || ''])));
 const texto = ref(ruta.query.texto || '');
-const masFiltros = ref(['subtipo', 'sector_id', 'unidad_id', 'desde', 'hasta', 'estado'].some(k => f[k]));
+const masFiltros = ref(EXTRA.some(k => f[k]));
+const insumos = ref([]);
+const personalOrdenado = computed(() => [...catalogos.personal].sort((a, b) => a.nombre_completo.localeCompare(b.nombre_completo)));
 
 const servicios = ref([]);
 const total = ref(0);
@@ -150,7 +167,7 @@ const pagina = ref(1);
 const tamano = 25;
 const cargando = ref(false);
 
-const filtrosActivos = computed(() => ['subtipo', 'sector_id', 'unidad_id', 'desde', 'hasta', 'estado'].filter(k => f[k]).length);
+const filtrosActivos = computed(() => EXTRA.filter(k => f[k]).length);
 
 const resumenFiltros = computed(() => [
   f.tipo_servicio ? nombreTipo(f.tipo_servicio) : 'Todos los tipos',
@@ -199,7 +216,10 @@ const limpiarFiltros = () => {
 
 const imprimir = () => window.print();
 
-onMounted(cargar);
+onMounted(() => {
+  cargar();
+  inventario.listar().then(({ data }) => { insumos.value = data.insumos.filter(i => i.clase !== 'equipo'); }).catch(() => {});
+});
 </script>
 
 <style scoped>

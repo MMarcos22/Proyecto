@@ -22,30 +22,30 @@ const panel = async (req, res) => {
     try {
         const resumen = await query(`
       SELECT
-        COUNT(*) FILTER (WHERE fecha BETWEEN $1 AND $2)::int AS servicios,
-        COUNT(*) FILTER (WHERE fecha BETWEEN $3 AND $4)::int AS servicios_anterior,
+        COUNT(DISTINCT incidente_id) FILTER (WHERE fecha BETWEEN $1 AND $2)::int AS servicios,
+        COUNT(DISTINCT incidente_id) FILTER (WHERE fecha BETWEEN $3 AND $4)::int AS servicios_anterior,
         ROUND(AVG(minutos_trabajados) FILTER (WHERE fecha BETWEEN $1 AND $2))::int AS minutos_promedio,
         COUNT(DISTINCT sector_id) FILTER (WHERE fecha BETWEEN $1 AND $2)::int AS sectores_con_servicio,
-        COUNT(*) FILTER (WHERE fecha BETWEEN $1 AND $2 AND sector_id IS NULL)::int AS sin_sector
+        COUNT(DISTINCT incidente_id) FILTER (WHERE fecha BETWEEN $1 AND $2 AND sector_id IS NULL)::int AS sin_sector
       FROM emergencias WHERE estado IN ('pendiente', 'completa', 'firmada')`, [p.desde, p.hasta, p.anterior.desde, p.anterior.hasta]);
 
         const porTipo = await query(`
       SELECT tipo_servicio,
-        COUNT(*) FILTER (WHERE fecha BETWEEN $1 AND $2)::int AS total,
-        COUNT(*) FILTER (WHERE fecha BETWEEN $3 AND $4)::int AS anterior
+        COUNT(DISTINCT incidente_id) FILTER (WHERE fecha BETWEEN $1 AND $2)::int AS total,
+        COUNT(DISTINCT incidente_id) FILTER (WHERE fecha BETWEEN $3 AND $4)::int AS anterior
       FROM emergencias WHERE estado IN ('pendiente', 'completa', 'firmada') AND fecha BETWEEN $3 AND $2
       GROUP BY tipo_servicio`, [p.desde, p.hasta, p.anterior.desde, p.anterior.hasta]);
 
         const porSector = await query(`
       SELECT COALESCE(s.nombre, 'Sin sector') AS sector, e.sector_id,
-             COUNT(*)::int AS total,
+             COUNT(DISTINCT e.incidente_id)::int AS total,
              MODE() WITHIN GROUP (ORDER BY e.tipo_servicio) AS tipo_predominante
       FROM emergencias e LEFT JOIN sectores s ON s.id = e.sector_id
       WHERE e.estado IN ('pendiente', 'completa', 'firmada') AND e.fecha BETWEEN $1 AND $2
       GROUP BY s.nombre, e.sector_id ORDER BY total DESC LIMIT 8`, [p.desde, p.hasta]);
 
         const porDia = await query(`
-      SELECT d::date AS fecha, COUNT(e.id)::int AS total
+      SELECT d::date AS fecha, COUNT(DISTINCT e.incidente_id)::int AS total
       FROM generate_series($1::date, $2::date, '1 day') d
       LEFT JOIN emergencias e ON e.fecha = d::date AND e.estado IN ('pendiente', 'completa', 'firmada')
       GROUP BY d ORDER BY d`, [p.desde, p.hasta]);
@@ -201,7 +201,7 @@ const tendencias = async (req, res) => {
         const valMes = [p.hasta];
         const condMes = filtrosServicio(req.query, valMes);
         const mensual = await query(`
-      SELECT TO_CHAR(DATE_TRUNC('month', e.fecha), 'YYYY-MM') AS mes, e.tipo_servicio, COUNT(*)::int AS total
+      SELECT TO_CHAR(DATE_TRUNC('month', e.fecha), 'YYYY-MM') AS mes, e.tipo_servicio, COUNT(DISTINCT e.incidente_id)::int AS total
       FROM emergencias e
       WHERE ${condMes.join(' AND ')}
         AND e.fecha >= DATE_TRUNC('month', $1::date) - INTERVAL '11 months'
@@ -210,13 +210,13 @@ const tendencias = async (req, res) => {
 
         const calor = await query(`
       SELECT EXTRACT(ISODOW FROM e.fecha)::int AS dia, EXTRACT(HOUR FROM e.hora_salida)::int AS hora,
-             COUNT(*)::int AS total
+             COUNT(DISTINCT e.incidente_id)::int AS total
       FROM emergencias e ${where} AND e.hora_salida IS NOT NULL
       GROUP BY 1, 2`, val);
 
         const unidades = await query(`
       SELECT COALESCE(u.codigo, NULLIF(e.unidad, ''), 'Sin unidad') AS unidad,
-             COUNT(*)::int AS servicios,
+             COUNT(DISTINCT e.incidente_id)::int AS servicios,
              COALESCE(SUM(e.minutos_trabajados), 0)::int AS minutos,
              ROUND(AVG(e.minutos_trabajados))::int AS minutos_promedio,
              MODE() WITHIN GROUP (ORDER BY e.tipo_servicio) AS tipo_predominante
@@ -225,7 +225,7 @@ const tendencias = async (req, res) => {
       GROUP BY 1 ORDER BY servicios DESC`, val);
 
         const subtipos = await query(`
-      SELECT e.tipo_servicio, COALESCE(e.subtipo, 'sin_clasificar') AS subtipo, COUNT(*)::int AS total
+      SELECT e.tipo_servicio, COALESCE(e.subtipo, 'sin_clasificar') AS subtipo, COUNT(DISTINCT e.incidente_id)::int AS total
       FROM emergencias e ${where}
       GROUP BY 1, 2 ORDER BY total DESC`, val);
 

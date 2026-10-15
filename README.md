@@ -24,15 +24,16 @@ El diseño completo y su justificación están en [docs/analisis-del-sistema.md]
 `npm run migrar` aplica en orden los archivos de `backend/src/database/migraciones/` que falten; es seguro ejecutarlo varias veces.
 Todo funciona en la red local de la estación, sin internet (fuentes incluidas).
 
-Usuarios iniciales: `admin / admin123` y `operativo / operativo123` (cámbielos desde *Configuración › Usuarios*).
+Usuarios iniciales: `admin / admin123`, `operativo / operativo123` y `cabina / cabina123` (cámbielos desde *Configuración › Usuarios*).
 Los datos de prueba (`npm run simular -- --reiniciar`) crean además `direccion / direccion123`, y todo el personal simulado tiene el PIN `1234`.
 
 ## Roles
 
 | Rol | Quién | Puede |
 |---|---|---|
-| Cabina (`operativo`) | Computadora de cabina | Registrar llamadas y regresos; cada bombero completa sus boletas con su PIN |
-| Administración | Encargada administrativa | Inventario, revisión y firma de boletas, informes, catálogos y usuarios |
+| Cabina (`cabina`) | Computadora de cabina | Solo registra llamadas y regresos; cada bombero completa sus boletas con su PIN. Inicio: unidades fuera, disponibles y fuera de servicio, boletas por completar del turno y turno activo |
+| Operativo (`operativo`) | Personal operativo | Lo de cabina, más existencias y movimientos de inventario (consulta), historial de boletas e informes |
+| Administración | Encargada administrativa | Todo el sistema: inventario, revisión y firma, análisis, informes, catálogos y usuarios. Ve las boletas por completar, pero no las completa |
 | Dirección | Jefe de la compañía | Consultar todo; no puede modificar registros |
 
 ## Antes de usar en producción
@@ -43,7 +44,7 @@ Los datos de prueba (`npm run simular -- --reiniciar`) crean además `direccion 
 
 ## Cómo funciona una boleta
 
-1. **Cabina** registra la llamada (tipo, dirección, sector, unidad y tripulación) y pulsa **«La unidad salió»**. La boleta queda *en curso*, todavía sin número.
+1. **Cabina** registra la llamada (tipo, dirección, sector, unidades y tripulación) y pulsa **«La unidad salió»**. Si salen varias unidades, cada una lleva su propia boleta con su piloto y su tripulación, ligadas al mismo incidente. Piloto, tripulación y firmas solo se eligen del personal del turno de guardia. La boleta queda *en curso*, todavía sin número.
 2. Cuando la unidad vuelve, en Inicio se pulsa **«La unidad regresó»**: la boleta recibe el **siguiente número de control de su tipo, en el orden en que regresan las unidades** (regla de la capital).
 3. La **tripulación** completa la boleta cuando puede, identificándose con su **PIN**. Para marcarla como completa no puede quedar ningún campo en blanco: cada uno lleva su dato o «No aplica».
 4. Se imprime en hoja oficio con el formato oficial completo y se firma.

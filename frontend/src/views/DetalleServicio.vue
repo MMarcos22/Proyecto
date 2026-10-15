@@ -21,7 +21,7 @@
           <button v-if="auth.esAdministrador && ['completa', 'firmada'].includes(s.estado)" class="btn btn-plano" @click="abrirCertificar">
             <Icono nombre="boleta" :tam="15" />Copia certificada
           </button>
-          <router-link v-if="editable && auth.puedeEditar" :to="`/boleta/${s.id}`" class="btn btn-secundario">
+          <router-link v-if="editable && auth.atiendeServicios" :to="`/boleta/${s.id}`" class="btn btn-secundario">
             <Icono nombre="editar" :tam="15" />{{ s.estado === 'completa' ? 'Corregir' : 'Completar' }}
           </router-link>
           <button v-if="auth.esAdministrador && s.estado === 'completa'" class="btn btn-secundario" :disabled="procesando" @click="firmar">
@@ -68,6 +68,9 @@
               <div><dt>Tripulación</dt><dd>{{ s.tripulacion.map(p => p.nombre_completo).join(', ') || '—' }}</dd></div>
               <div><dt>Unidad</dt><dd class="mono">{{ s.unidad || '—' }}</dd></div>
               <div><dt>Piloto</dt><dd>{{ s.piloto || '—' }}</dd></div>
+              <div v-if="s.incidente?.length"><dt>Mismo incidente</dt><dd>
+                <template v-for="(o, i) in s.incidente" :key="o.id">{{ i ? ', ' : '' }}<router-link :to="`/historial/${o.id}`">{{ o.numero_control || 'sin número' }}{{ o.unidad ? ` (${o.unidad})` : '' }}</router-link></template>
+              </dd></div>
               <div><dt>Tiempo</dt><dd class="mono">{{ minutos(s.minutos_trabajados) }}</dd></div>
             </dl>
           </section>
@@ -403,7 +406,6 @@ onMounted(() => {
   .raya { border-top-color: #000; }
   .firmas span, .firma-valor, .lugar-fecha, .razon, .razon strong { color: #000; }
 
-  @page { size: 21.6cm 33cm; margin: 1.5cm; }
 }
 
 @media (max-width: 900px) {

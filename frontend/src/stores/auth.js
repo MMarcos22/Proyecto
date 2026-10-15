@@ -10,11 +10,13 @@ export const useAuthStore = defineStore('auth', () => {
     const autenticado = computed(() => !!token.value);
     const esAdministrador = computed(() => usuario.value?.rol === 'administrador');
     const esOperativo = computed(() => usuario.value?.rol === 'operativo');
-    // Cabina: inicia boletas y registra regresos. Dirección: solo consulta.
-    const esCabina = esOperativo;
+    const esCabina = computed(() => usuario.value?.rol === 'cabina');
     const esDireccion = computed(() => usuario.value?.rol === 'direccion');
+    // Cabina y operativo atienden servicios: registran llamadas, regresos y completan
+    // boletas con el PIN de la tripulación. La administración ve, revisa y firma.
+    const atiendeServicios = computed(() => esCabina.value || esOperativo.value);
     const puedeEditar = computed(() => !esDireccion.value);
-    const nombreRol = computed(() => ({ administrador: 'Administración', operativo: 'Cabina', direccion: 'Dirección' })[usuario.value?.rol] || '');
+    const nombreRol = computed(() => ({ administrador: 'Administración', operativo: 'Operativo', cabina: 'Cabina', direccion: 'Dirección' })[usuario.value?.rol] || '');
     const iniciales = computed(() => {
         if (!usuario.value?.nombre) return '';
         return usuario.value.nombre
@@ -57,7 +59,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     return {
         usuario, token, cargando,
-        autenticado, esAdministrador, esOperativo, esCabina, esDireccion, puedeEditar, nombreRol, iniciales,
+        autenticado, esAdministrador, esOperativo, esCabina, esDireccion, atiendeServicios, puedeEditar, nombreRol, iniciales,
         restaurar, iniciarSesion, cerrarSesion
     };
 });

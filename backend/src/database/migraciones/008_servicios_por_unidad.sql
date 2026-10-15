@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════
 -- MIGRACIÓN 008 — Qué servicios atiende cada unidad
---   (docs/auditoria-ux-ui.md, caso C-03). Al registrar una llamada el
+--   (docs/Sistema_por_modulos.docx, sección 5). Al registrar una llamada el
 --   sistema propone sola la unidad disponible que corresponde al tipo:
 --   una ambulancia para ambulancia, la cisterna para agua. Sin este
 --   dato la cabina tenía que elegir entre todas las unidades.

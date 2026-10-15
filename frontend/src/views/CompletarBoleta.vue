@@ -19,7 +19,21 @@
       <div v-if="estado === 'en_curso'" class="aviso aviso-info mb">
         <Icono nombre="ambulancia" :tam="20" />
         <div class="crecer"><strong>La unidad no ha regresado.</strong> El número se asigna al registrar el regreso.</div>
-        <button v-if="auth.puedeEditar" class="btn btn-azul btn-sm" @click="registrarRegreso">La unidad regresó</button>
+        <button v-if="auth.atiendeServicios" class="btn btn-azul btn-sm" @click="registrarRegreso">La unidad regresó</button>
+      </div>
+
+      <!-- ══ OTRAS UNIDADES DEL MISMO INCIDENTE ═══════════ -->
+      <div v-if="s.incidente?.length" class="aviso aviso-info mb">
+        <Icono nombre="ambulancia" :tam="20" />
+        <div class="crecer">
+          <strong>Salieron {{ s.incidente.length + 1 }} unidades a este incidente.</strong> Cada una completa su propia boleta:
+          <template v-for="(o, i) in s.incidente" :key="o.id">{{ i ? ', ' : ' ' }}<router-link :to="`/historial/${o.id}`">{{ o.numero_control || 'sin número' }}{{ o.unidad ? ` (${o.unidad})` : '' }}</router-link></template>.
+        </div>
+      </div>
+
+      <div v-if="!turnoBoleta" class="aviso aviso-alerta mb">
+        <Icono nombre="alerta" :tam="18" />
+        <div class="crecer">Esta boleta no tiene turno de guardia y no hay uno abierto: piloto, tripulación y firmas solo se eligen del personal de guardia.</div>
       </div>
 
       <!-- ══ IDENTIFICACIÓN DE LA TRIPULACIÓN ═══════════ -->
@@ -35,7 +49,6 @@
           <option :value="null">Elija su nombre…</option>
           <option v-for="p in s.tripulacion" :key="p.id" :value="p.id" :disabled="!p.tiene_pin">{{ p.nombre_completo }}{{ p.tiene_pin ? '' : ' · sin PIN' }}</option>
         </select>
-        <p v-if="!s.tripulacion.length" class="aviso aviso-alerta mb"><Icono nombre="alerta" :tam="18" />No tiene tripulación registrada: la administración debe completarla.</p>
         <form class="fila pin-fila" @submit.prevent="verificarPin">
           <input v-model="pin.pin" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" autocomplete="off"
                  class="control mono pin-entrada" placeholder="PIN" aria-label="PIN de 4 dígitos" :disabled="!pin.personal_id" />
@@ -49,10 +62,7 @@
       <div v-else class="espacio">
         <div class="formulario todo-obligatorio">
           <p class="leyenda-obligatorio">Todos los campos son obligatorios <span class="req">*</span>: escriba el dato o márquelo «No aplica».</p>
-          <p v-if="auth.esAdministrador && estado !== 'en_curso'" class="aviso aviso-info mb">
-            <Icono nombre="info" :tam="18" />Edita como administración: cada cambio queda registrado.
-          </p>
-          <p v-else-if="autor" class="aviso aviso-exito mb">
+          <p v-if="autor" class="aviso aviso-exito mb">
             <Icono nombre="check" :tam="18" />Completando como <strong>{{ autor.nombre }}</strong>.
           </p>
 
@@ -78,7 +88,12 @@
           <section id="sec-llamada" class="tarjeta bloque">
             <h2 class="titulo-bloque">Llamada y ubicación</h2>
             <div class="rejilla rejilla-2">
-              <div class="campo"><label for="tel">Solicitud por teléfono</label><input id="tel" v-model="d.solicitud_por_telefono" class="control num" /></div>
+              <div class="campo">
+                <label for="tel">Solicitud por teléfono</label>
+                <input id="tel" :value="d.solicitud_por_telefono" class="control num" inputmode="numeric" maxlength="9" placeholder="0000 0000"
+                       autocomplete="off" @input="escribirTelefono" />
+                <span v-if="telefonoIncompleto" class="ayuda error-campo">El teléfono lleva 8 dígitos (o márquelo «No aplica»).</span>
+              </div>
               <div class="campo"><label for="solic">Nombre del solicitante</label><input id="solic" v-model="d.solicitante" class="control" /></div>
             </div>
             <div class="campo"><label for="dir">Dirección</label><input id="dir" v-model="d.direccion" class="control" /></div>
@@ -102,17 +117,17 @@
                 <label for="pil">Piloto</label>
                 <select id="pil" v-model="d.piloto_id" class="control">
                   <option :value="null">Sin piloto</option>
-                  <option v-for="p in catalogos.personal" :key="p.id" :value="p.id">{{ p.nombre_completo }}</option>
+                  <option v-for="p in pilotosTurno" :key="p.id" :value="p.id">{{ p.nombre_completo }}</option>
                 </select>
               </div>
             </div>
             <div class="campo">
               <span class="rotulo-campo">Tripulación (personal)</span>
-              <SelectorTripulacion v-model="d.tripulacion" :turno="null" />
+              <SelectorTripulacion v-model="d.tripulacion" :turno="turnoBoleta" />
             </div>
             <div class="campo">
               <label for="dest">Personal destacado</label>
-              <SelectorTripulacion id="dest" v-model="destacados" :excluidos="enLaUnidad" etiqueta="Personal destacado" placeholder="Elija… o márquelo «No aplica»" />
+              <SelectorTripulacion id="dest" v-model="destacados" :turno="turnoBoleta" :excluidos="enLaUnidad" etiqueta="Personal destacado" placeholder="Elija… o márquelo «No aplica»" />
               <span class="ayuda">Personal enviado al lugar además de la tripulación: refuerzos, otra estación o quien se quedó en el lugar.</span>
             </div>
             <div class="rejilla rejilla-2">
@@ -157,18 +172,18 @@
 
           <section id="sec-firmas" class="tarjeta bloque">
             <h2 class="titulo-bloque">Radiotelefonista y firmas</h2>
-            <div class="campo"><label for="radio">Radiotelefonista (cabinista)</label><input id="radio" v-model="d.radiotelefonista" class="control" list="dl-personal" /></div>
+            <p class="ayuda mb">Solo se elige al personal del turno de guardia en que se atendió el servicio.</p>
+            <div class="campo"><span class="rotulo-campo">Radiotelefonista (cabinista)</span><SelectorPersona v-model="d.radiotelefonista" :turno="turnoBoleta" etiqueta="Radiotelefonista" /></div>
             <div v-if="d.tipo_servicio === 'incendio'" class="rejilla rejilla-2">
-              <div class="campo"><label for="resp">Responsable</label><input id="resp" v-model="d.responsable" class="control" list="dl-personal" /></div>
-              <div class="campo"><label for="jefes">Jefes de servicio</label><input id="jefes" v-model="d.jefes_servicio" class="control" list="dl-personal" /></div>
+              <div class="campo"><span class="rotulo-campo">Responsable</span><SelectorPersona v-model="d.responsable" :turno="turnoBoleta" etiqueta="Responsable" /></div>
+              <div class="campo"><span class="rotulo-campo">Jefes de servicio</span><SelectorPersona v-model="d.jefes_servicio" :turno="turnoBoleta" etiqueta="Jefes de servicio" /></div>
             </div>
             <div v-else class="rejilla rejilla-2">
-              <div class="campo"><label for="form">Reporte formulado por</label><input id="form" v-model="d.reporte_formulado_por" class="control" list="dl-personal" /></div>
-              <div class="campo"><label for="conf">Es conforme el piloto</label><input id="conf" v-model="d.conforme_piloto" class="control" list="dl-personal" /></div>
-              <div class="campo"><label for="vobo">Vo. Bo. jefe de servicio</label><input id="vobo" v-model="d.vobo_jefe_servicio" class="control" list="dl-personal" /></div>
+              <div class="campo"><span class="rotulo-campo">Reporte formulado por</span><SelectorPersona v-model="d.reporte_formulado_por" :turno="turnoBoleta" etiqueta="Reporte formulado por" /></div>
+              <div class="campo"><span class="rotulo-campo">Es conforme el piloto</span><SelectorPersona v-model="d.conforme_piloto" :turno="turnoBoleta" etiqueta="Es conforme el piloto" /></div>
+              <div class="campo"><span class="rotulo-campo">Vo. Bo. jefe de servicio</span><SelectorPersona v-model="d.vobo_jefe_servicio" :turno="turnoBoleta" etiqueta="Vo. Bo. jefe de servicio" /></div>
             </div>
           </section>
-          <datalist id="dl-personal"><option v-for="p in catalogos.personal" :key="p.id" :value="p.nombre_completo" /></datalist>
         </div>
 
         <!-- Columna derecha: lo que falta y la hoja oficial -->
@@ -226,18 +241,20 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { emergencias, inventario, mensajeError } from '../services/api';
+import { emergencias, inventario, turnos, mensajeError } from '../services/api';
 import { useAuthStore } from '../stores/auth';
 import { useImpresionStore } from '../stores/impresion';
 import { useAlertasStore } from '../stores/alertas';
 import { useNotificacionesStore } from '../stores/notificaciones';
 import { useCatalogosStore, nombreTipo } from '../stores/catalogos';
-import { minutos as minutosTexto } from '../utils/formato';
+import { minutos as minutosTexto, telefonoTexto, telefonoCompleto } from '../utils/formato';
+import { personalDeTurno } from '../utils/turno';
 import { aBoleta, desdeBoleta, faltantesDe, ESTACION } from '../utils/boleta';
 import Icono from '../components/Icono.vue';
 import BoletaImpresa from '../components/BoletaImpresa.vue';
 import SelectorSector from '../components/boleta/SelectorSector.vue';
 import SelectorTripulacion from '../components/boleta/SelectorTripulacion.vue';
+import SelectorPersona from '../components/boleta/SelectorPersona.vue';
 import DetalleAmbulancia from '../components/boleta/DetalleAmbulancia.vue';
 import DetalleIncendio from '../components/boleta/DetalleIncendio.vue';
 import DetalleRescate from '../components/boleta/DetalleRescate.vue';
@@ -272,7 +289,20 @@ const nuevoInsumo = reactive({ insumo_id: null, cantidad: 1 });
 const cambios = ref(false);
 const ultimoGuardado = ref(null);
 
-const pidePin = computed(() => auth.esCabina && estado.value !== 'en_curso' && !autor.value);
+// La tripulación se identifica con su PIN; una boleta sin tripulación registrada la completa cabina
+const pidePin = computed(() => auth.atiendeServicios && estado.value !== 'en_curso' && !autor.value && !!s.value?.tripulacion.length);
+
+// Turno en que se atendió el servicio (o el abierto, si la boleta no tiene): de ahí sale el personal
+const turnoActual = ref(null);
+const turnoBoleta = computed(() => s.value?.turno || turnoActual.value);
+const pilotosTurno = computed(() => personalDeTurno(catalogos.personal, turnoBoleta.value, [d.piloto_id])
+  .sort((a, b) => (b.es_piloto - a.es_piloto) || a.nombre_completo.localeCompare(b.nombre_completo)));
+
+const telefonoIncompleto = computed(() => !!d.solicitud_por_telefono && d.solicitud_por_telefono !== 'No aplica' && !telefonoCompleto(d.solicitud_por_telefono));
+const escribirTelefono = (e) => {
+  d.solicitud_por_telefono = telefonoTexto(e.target.value);
+  e.target.value = d.solicitud_por_telefono;
+};
 
 const claseEstado = computed(() => ({ en_curso: 'et-info', pendiente: 'et-alerta', completa: 'et-neutra', firmada: 'et-exito', anulada: 'et-peligro' })[estado.value]);
 const estadoGuardado = computed(() => guardando.value ? 'Guardando…' : cambios.value ? 'Cambios sin guardar' : ultimoGuardado.value ? 'Guardado' : '');
@@ -378,6 +408,11 @@ const guardar = async (completar) => {
     cambios.value = false;
     ultimoGuardado.value = Date.now();
     impresion.contarPendientes();
+    // Recién registrada la tripulación, desde ahora la boleta se completa con su PIN
+    if (!s.value.tripulacion.length && d.tripulacion.length && estado.value !== 'en_curso') {
+      notif.exito('Tripulación registrada. Ahora un tripulante continúa con su PIN.');
+      return cargar();
+    }
     if (completar) notif.exito('Boleta completa. Ya se puede imprimir.');
     else if (!automatico) notif.exito('Guardado. Puede seguir después desde Inicio.');
   } catch (e) {
@@ -393,7 +428,7 @@ let espera = null;
 let automatico = false;
 let listo = false;
 watch(dRef, () => {
-  if (!listo || pidePin.value || !auth.puedeEditar) return;
+  if (!listo || pidePin.value || !auth.atiendeServicios) return;
   cambios.value = true;
   clearTimeout(espera);
   espera = setTimeout(() => { automatico = true; guardar(false); }, 3000);
@@ -484,6 +519,7 @@ onMounted(async () => {
   try {
     await catalogos.cargar();
     await cargar();
+    if (!s.value?.turno) turnoActual.value = (await turnos.actual().catch(() => ({ data: null }))).data;
     const { data: inv } = await inventario.listar();
     insumosDisponibles.value = inv.insumos.filter(i => i.stock_actual > 0 && i.categoria === 'prehospitalario');
   } catch (e) {
@@ -514,6 +550,7 @@ onBeforeUnmount(() => clearTimeout(espera));
 .titulo-bloque { font-size: 17px; margin-bottom: 14px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .titulo-bloque .opcional { font-size: 13px; font-weight: 400; color: var(--texto-tenue); }
 .ayuda.dudoso { color: var(--alerta); font-weight: 600; }
+.error-campo { color: var(--peligro); font-weight: 600; }
 /* Estructura de los componentes de detalle por tipo */
 .bloque :deep(.pila-paso) { display: flex; flex-direction: column; gap: 24px; padding-bottom: 14px; }
 .bloque :deep(.subtitulo) { font-size: 15px; font-weight: 700; margin-bottom: 10px; }

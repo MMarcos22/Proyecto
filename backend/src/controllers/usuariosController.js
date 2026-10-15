@@ -3,7 +3,7 @@ const { query } = require('../config/database');
 const { registrarBitacora, entero } = require('../utils/comun');
 
 const db = { query };
-const ROLES = ['administrador', 'operativo', 'direccion'];
+const ROLES = ['administrador', 'operativo', 'cabina', 'direccion'];
 const CLAVE_MINIMA = 8;
 
 const listar = async (req, res) => {

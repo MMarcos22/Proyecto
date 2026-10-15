@@ -48,7 +48,7 @@
 import { ref, watch, onMounted } from 'vue';
 import { informes, mensajeError } from '../services/api';
 import { useNotificacionesStore } from '../stores/notificaciones';
-import { periodosRapidos, describirPeriodo, MESES } from '../utils/formato';
+import { periodoActual, describirPeriodo, MESES } from '../utils/formato';
 import { exportarExcel } from '../utils/exportar';
 import SelectorPeriodo from '../components/SelectorPeriodo.vue';
 import BarrasH from '../components/graficos/BarrasH.vue';
@@ -56,8 +56,8 @@ import Icono from '../components/Icono.vue';
 import EncabezadoInforme from '../components/informes/EncabezadoInforme.vue';
 
 const notif = useNotificacionesStore();
-const { desde, hasta } = periodosRapidos()[2];
-const periodo = ref({ desde, hasta });
+// El convenio municipal se informa por trimestre
+const periodo = ref(periodoActual('trimestre'));
 const datos = ref(null);
 
 const nombreMes = (m) => `${MESES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;

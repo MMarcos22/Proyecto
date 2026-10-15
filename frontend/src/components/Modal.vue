@@ -26,7 +26,7 @@
 </template>
 
 <script setup>
-import { watch } from 'vue';
+import { watch, onUnmounted } from 'vue';
 
 const props = defineProps({
   modelValue: Boolean,
@@ -39,6 +39,11 @@ const cerrar = () => emit('update:modelValue', false);
 
 watch(() => props.modelValue, (abierto) => {
   document.body.style.overflow = abierto ? 'hidden' : '';
+});
+// Si la ventana desaparece abierta (p. ej. al cerrar sesión o cambiar de página),
+// la página debe volver a desplazarse
+onUnmounted(() => {
+  if (props.modelValue) document.body.style.overflow = '';
 });
 </script>
 

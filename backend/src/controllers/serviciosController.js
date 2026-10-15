@@ -31,47 +31,47 @@ const calcular = async (p, tipo) => {
 
     const sectores = await query(`
     SELECT e.sector_id, s.nombre AS sector,
-      COUNT(*) FILTER (WHERE e.fecha BETWEEN $1 AND $2)::int AS servicios,
-      COUNT(*) FILTER (WHERE e.fecha BETWEEN $3 AND $4)::int AS anterior,
+      COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.fecha BETWEEN $1 AND $2)::int AS servicios,
+      COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.fecha BETWEEN $3 AND $4)::int AS anterior,
       MODE() WITHIN GROUP (ORDER BY e.tipo_servicio) FILTER (WHERE e.fecha BETWEEN $1 AND $2) AS tipo_predominante,
       MODE() WITHIN GROUP (ORDER BY e.subtipo) FILTER (WHERE e.fecha BETWEEN $1 AND $2 AND e.subtipo IS NOT NULL) AS subtipo_predominante,
       MODE() WITHIN GROUP (ORDER BY EXTRACT(HOUR FROM e.hora_salida)) FILTER (WHERE e.fecha BETWEEN $1 AND $2) AS hora_pico
     ${base} AND e.fecha BETWEEN $3 AND $2
     GROUP BY e.sector_id, s.nombre
-    HAVING COUNT(*) FILTER (WHERE e.fecha BETWEEN $1 AND $2) > 0
-        OR COUNT(*) FILTER (WHERE e.fecha BETWEEN $3 AND $4) > 0
+    HAVING COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.fecha BETWEEN $1 AND $2) > 0
+        OR COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.fecha BETWEEN $3 AND $4) > 0
     ORDER BY servicios DESC, s.nombre`, val);
 
     const tipos = await query(`
     SELECT e.tipo_servicio,
-      COUNT(*) FILTER (WHERE e.fecha BETWEEN $1 AND $2)::int AS servicios,
-      COUNT(*) FILTER (WHERE e.fecha BETWEEN $3 AND $4)::int AS anterior
+      COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.fecha BETWEEN $1 AND $2)::int AS servicios,
+      COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.fecha BETWEEN $3 AND $4)::int AS anterior
     ${base} AND e.fecha BETWEEN $3 AND $2 GROUP BY 1 ORDER BY 2 DESC`, val);
 
     const valP = tipo ? [p.desde, p.hasta, tipo] : [p.desde, p.hasta];
     const filtroP = tipo ? 'AND e.tipo_servicio = $3' : '';
     const baseP = `FROM emergencias e WHERE e.estado IN ('pendiente', 'completa', 'firmada') AND e.fecha BETWEEN $1 AND $2 ${filtroP}`;
 
-    const horas = await query(`SELECT EXTRACT(HOUR FROM e.hora_salida)::int AS hora, COUNT(*)::int AS n ${baseP} AND e.hora_salida IS NOT NULL GROUP BY 1`, valP);
-    const dias = await query(`SELECT EXTRACT(ISODOW FROM e.fecha)::int AS dia, COUNT(*)::int AS n ${baseP} GROUP BY 1 ORDER BY 2 DESC`, valP);
+    const horas = await query(`SELECT EXTRACT(HOUR FROM e.hora_salida)::int AS hora, COUNT(DISTINCT e.incidente_id)::int AS n ${baseP} AND e.hora_salida IS NOT NULL GROUP BY 1`, valP);
+    const dias = await query(`SELECT EXTRACT(ISODOW FROM e.fecha)::int AS dia, COUNT(DISTINCT e.incidente_id)::int AS n ${baseP} GROUP BY 1 ORDER BY 2 DESC`, valP);
     const calor = await query(`
-    SELECT EXTRACT(ISODOW FROM e.fecha)::int AS dia, EXTRACT(HOUR FROM e.hora_salida)::int AS hora, COUNT(*)::int AS total
+    SELECT EXTRACT(ISODOW FROM e.fecha)::int AS dia, EXTRACT(HOUR FROM e.hora_salida)::int AS hora, COUNT(DISTINCT e.incidente_id)::int AS total
     ${baseP} AND e.hora_salida IS NOT NULL GROUP BY 1, 2`, valP);
     const subtipos = await query(`
-    SELECT e.tipo_servicio, e.subtipo, COUNT(*)::int AS total
+    SELECT e.tipo_servicio, e.subtipo, COUNT(DISTINCT e.incidente_id)::int AS total
     ${baseP} AND e.subtipo IS NOT NULL GROUP BY 1, 2 ORDER BY total DESC`, valP);
     // Lugares críticos: los puntos concretos que la compañía ya reconoce (entrevista 1:00:32)
     const lugares = await query(`
-    SELECT lc.id, lc.nombre, s.nombre AS sector, COUNT(*)::int AS servicios,
+    SELECT lc.id, lc.nombre, s.nombre AS sector, COUNT(DISTINCT e.incidente_id)::int AS servicios,
            MODE() WITHIN GROUP (ORDER BY e.subtipo) AS subtipo, MODE() WITHIN GROUP (ORDER BY e.tipo_servicio) AS tipo
     FROM emergencias e JOIN lugares_criticos lc ON lc.id = e.lugar_critico_id JOIN sectores s ON s.id = lc.sector_id
     WHERE e.estado IN ('pendiente', 'completa', 'firmada') AND e.fecha BETWEEN $1 AND $2 ${filtroP}
     GROUP BY lc.id, lc.nombre, s.nombre ORDER BY servicios DESC`, valP);
     const calidad = await query(`
-    SELECT COUNT(*)::int AS total,
-           COUNT(*) FILTER (WHERE e.sector_id IS NULL)::int AS sin_sector,
-           COUNT(*) FILTER (WHERE e.subtipo IS NULL)::int AS sin_clasificar,
-           COUNT(*) FILTER (WHERE e.hora_salida IS NULL)::int AS sin_hora
+    SELECT COUNT(DISTINCT e.incidente_id)::int AS total,
+           COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.sector_id IS NULL)::int AS sin_sector,
+           COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.subtipo IS NULL)::int AS sin_clasificar,
+           COUNT(DISTINCT e.incidente_id) FILTER (WHERE e.hora_salida IS NULL)::int AS sin_hora
     ${baseP}`, valP);
 
     const total = calidad.rows[0].total;

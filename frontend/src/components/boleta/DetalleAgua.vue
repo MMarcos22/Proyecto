@@ -31,10 +31,7 @@
     <section class="tarjeta donativo">
       <div class="campo">
         <label for="donativo">Donativo recibido</label>
-        <div class="con-unidad">
-          <span class="moneda">Q</span>
-          <input id="donativo" v-model.number="d.donativo" type="number" min="0" step="0.01" class="control num" style="max-width:200px" />
-        </div>
+        <CampoQuetzales id="donativo" v-model="d.donativo" style="max-width:220px" />
         <p v-if="d.donativo" class="letras"><Icono nombre="check" :tam="15" :grosor="3" />{{ letras }}</p>
         <span class="ayuda">La cantidad en letras se escribe sola en la boleta.</span>
       </div>
@@ -51,6 +48,7 @@
 import { computed } from 'vue';
 import { FORMAS_DISTRIBUCION, quetzalesEnLetras } from '../../utils/boleta';
 import Icono from '../Icono.vue';
+import CampoQuetzales from '../CampoQuetzales.vue';
 
 const d = defineModel({ required: true });
 const letras = computed(() => quetzalesEnLetras(Number(d.value.donativo)));

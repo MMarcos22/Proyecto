@@ -60,7 +60,8 @@ export const emergencias = {
     listar: (params) => api.get('/emergencias', { params }),
     obtener: (id) => api.get(`/emergencias/${id}`),
     enCurso: () => api.get('/emergencias/en-curso'),
-    porCompletar: () => api.get('/emergencias/por-completar'),
+    // alcance: 'turno' (las del turno de guardia) o 'todas' (administración)
+    porCompletar: (alcance = 'turno') => api.get('/emergencias/por-completar', { params: { alcance } }),
     revision: (fecha) => api.get('/emergencias/revision', { params: { fecha } }),
     contadores: () => api.get('/emergencias/contadores'),
     marcarImpresas: (ids) => api.post('/emergencias/impresas', { ids }),
@@ -104,7 +105,8 @@ export const informes = {
     proyeccion: () => api.get('/informes/proyeccion'),
     salidasUnidad: (params) => api.get('/informes/salidas-unidad', { params }),
     personas: (params) => api.get('/informes/personas', { params }),
-    totales: (params) => api.get('/informes/totales', { params })
+    totales: (params) => api.get('/informes/totales', { params }),
+    servicios: (params) => api.get('/informes/servicios', { params })
 };
 
 const crudCatalogo = (ruta) => ({

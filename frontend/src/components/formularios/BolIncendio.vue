@@ -62,9 +62,9 @@
 
   <div class="bol-fila">
     <span class="bol-et">VALOR APROXIMADO DEL INMUEBLE:</span>
-    <input v-model="d.valor_inmueble" class="bol-linea w-md" type="text" />
+    <input :value="dinero(d.valor_inmueble)" class="bol-linea w-md" type="text" />
     <span class="bol-et">MONTO APROX. DE PERDIDAS:</span>
-    <input v-model="d.perdidas_inmueble" class="bol-linea w-md" type="text" />
+    <input :value="dinero(d.perdidas_inmueble)" class="bol-linea w-md" type="text" />
   </div>
 
   <div class="bol-fila">
@@ -97,9 +97,9 @@
     <span class="bol-et">PLACAS:</span>
     <input v-model="d.placas" class="bol-linea w-md" type="text" />
     <span class="bol-et">VALOR APROXIMADO:</span>
-    <input v-model="d.valor_vehiculo" class="bol-linea w-md" type="text" />
+    <input :value="dinero(d.valor_vehiculo)" class="bol-linea w-md" type="text" />
     <span class="bol-et">PERDIDAS APROX.:</span>
-    <input v-model="d.perdidas_vehiculo" class="bol-linea w-md" type="text" />
+    <input :value="dinero(d.perdidas_vehiculo)" class="bol-linea w-md" type="text" />
   </div>
 
   <div class="bol-fila">
@@ -109,5 +109,6 @@
 </template>
 
 <script setup>
+import { dinero } from '../../utils/formato';
 const d = defineModel({ required: true });
 </script>

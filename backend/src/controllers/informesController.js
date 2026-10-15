@@ -155,7 +155,7 @@ const personas = async (req, res) => {
     try {
         const r = await query(`
       SELECT TO_CHAR(e.fecha, 'YYYY-MM') AS mes, e.tipo_servicio, e.subtipo,
-             COUNT(*)::int AS servicios,
+             COUNT(DISTINCT e.incidente_id)::int AS servicios,
              COALESCE(SUM(array_length(regexp_split_to_array(NULLIF(TRIM(COALESCE(da.nombres_pacientes, dr.nombres_rescatados)), ''), '\\s*;\\s*'), 1)), 0)::int AS personas
       FROM emergencias e
       LEFT JOIN detalle_ambulancia da ON da.emergencia_id = e.id
@@ -212,4 +212,108 @@ const totalesTipo = async (req, res) => {
     } catch (error) { fallo(res, 'Error en totales por tipo:', error); }
 };
 
-module.exports = { resumenAnual, proyeccion, salidasUnidad, personas, totalesTipo };
+// ── SERVICIOS ATENDIDOS, CON TODO SU DETALLE ──────
+// Para responder «¿quién me atendió ese día?» o «¿a dónde llevaron a cada
+// paciente del accidente de Vado Hondo?»: por fecha, cada incidente con sus
+// unidades, piloto, tripulación, pacientes y su traslado, e insumos usados.
+// Se filtra por personal, unidad, insumo, tipo o texto.
+const TRASLADO_AMBULANCIA = [
+    ['hosp_modular', 'Hospital Modular'], ['hosp_igss', 'Hospital IGSS'],
+    ['hosp_privado', 'Hospital privado'], ['otro_traslado', 'Otro lugar']
+];
+const trasladoDe = (f) => {
+    if (f.tipo_servicio === 'rescate') return f.traslado_a || null;
+    if (f.tipo_servicio !== 'ambulancia') return null;
+    const t = TRASLADO_AMBULANCIA.find(([c]) => f[c]);
+    if (!t) return 'Sin traslado';
+    const detalle = f[t[0]];
+    return detalle && detalle !== 'X' ? `${t[1]}: ${detalle}` : t[1];
+};
+const partir = (t) => (t ? String(t).split(/\s*;\s*/).filter(Boolean) : []);
+
+const serviciosDetalle = async (req, res) => {
+    const p = leerPeriodo(req.query);
+    const cond = [`e.estado <> 'anulada'`, 'e.fecha BETWEEN $1 AND $2'];
+    const val = [p.desde, p.hasta];
+    const agregar = (sql, v) => { val.push(v); cond.push(sql.replaceAll('?', `$${val.length}`)); };
+    const personalId = entero(req.query.personal_id);
+    const unidadId = entero(req.query.unidad_id);
+    const insumoId = entero(req.query.insumo_id);
+    // Un filtro de persona, unidad o insumo trae el incidente completo (todas sus unidades)
+    if (personalId) agregar(`e.incidente_id IN (SELECT x.incidente_id FROM emergencias x WHERE x.piloto_id = ?
+        OR EXISTS (SELECT 1 FROM boleta_tripulacion t WHERE t.emergencia_id = x.id AND t.personal_id = ?))`, personalId);
+    if (unidadId) agregar('e.incidente_id IN (SELECT x.incidente_id FROM emergencias x WHERE x.unidad_id = ?)', unidadId);
+    if (insumoId) agregar(`e.incidente_id IN (SELECT x.incidente_id FROM emergencias x
+        JOIN v_consumo_servicio c ON c.emergencia_id = x.id WHERE c.insumo_id = ?)`, insumoId);
+    if (TIPOS_SERVICIO[req.query.tipo_servicio]) agregar('e.tipo_servicio = ?', req.query.tipo_servicio);
+    if (req.query.texto?.trim()) {
+        agregar(`(e.direccion ILIKE ? OR e.solicitante ILIKE ? OR e.numero_control ILIKE ?
+        OR da.nombres_pacientes ILIKE ? OR dr.nombres_rescatados ILIKE ?)`, `%${req.query.texto.trim()}%`);
+    }
+    try {
+        const r = await query(`
+      SELECT e.id, e.incidente_id, e.numero_control, e.tipo_servicio, e.subtipo, e.estado, e.fecha,
+             e.hora_aviso, e.hora_salida, e.hora_entrada, e.minutos_trabajados,
+             e.direccion, COALESCE(s.nombre, e.zona) AS sector, lc.nombre AS lugar_critico,
+             e.solicitante, e.solicitud_por_telefono, e.unidad, e.piloto, e.personal_destacado,
+             e.radiotelefonista, e.observaciones,
+             COALESCE(da.nombres_pacientes, dr.nombres_rescatados) AS nombres, COALESCE(da.edades, dr.edades) AS edades,
+             da.hosp_modular, da.hosp_igss, da.hosp_privado, da.otro_traslado, dr.traslado_a,
+             da.hubo_fallecidos, da.fallecidos
+      FROM emergencias e
+      LEFT JOIN sectores s ON s.id = e.sector_id
+      LEFT JOIN lugares_criticos lc ON lc.id = e.lugar_critico_id
+      LEFT JOIN detalle_ambulancia da ON da.emergencia_id = e.id
+      LEFT JOIN detalle_rescate dr ON dr.emergencia_id = e.id
+      WHERE ${cond.join(' AND ')}
+      ORDER BY e.fecha DESC, e.hora_salida DESC NULLS LAST, e.incidente_id, e.id
+      LIMIT 500`, val);
+        const ids = r.rows.map(f => f.id);
+        const [trip, insumos] = await Promise.all([
+            query(`
+        SELECT t.emergencia_id, p.nombre_completo FROM boleta_tripulacion t JOIN personal p ON p.id = t.personal_id
+        WHERE t.emergencia_id = ANY($1::int[]) ORDER BY p.nombre_completo`, [ids]),
+            query(`
+        SELECT c.emergencia_id, i.nombre, i.unidad_medida, SUM(c.cantidad)::int AS cantidad
+        FROM v_consumo_servicio c JOIN insumos i ON i.id = c.insumo_id
+        WHERE c.emergencia_id = ANY($1::int[])
+        GROUP BY c.emergencia_id, i.nombre, i.unidad_medida ORDER BY i.nombre`, [ids])
+        ]);
+
+        // Agrupa las boletas por incidente, en el orden de la consulta
+        const incidentes = [];
+        const porId = new Map();
+        for (const f of r.rows) {
+            const clave = f.incidente_id ?? f.id;
+            let inc = porId.get(clave);
+            if (!inc) {
+                inc = {
+                    incidente_id: clave, fecha: f.fecha, hora_aviso: f.hora_aviso, hora_salida: f.hora_salida,
+                    tipo_servicio: f.tipo_servicio, causa: SUBTIPOS[f.tipo_servicio]?.[f.subtipo] || null,
+                    direccion: f.direccion, sector: f.sector, lugar_critico: f.lugar_critico,
+                    solicitante: f.solicitante, telefono: f.solicitud_por_telefono, radiotelefonista: f.radiotelefonista,
+                    boletas: []
+                };
+                porId.set(clave, inc);
+                incidentes.push(inc);
+            }
+            const nombres = partir(f.nombres);
+            const edades = partir(f.edades);
+            const traslado = trasladoDe(f);
+            inc.boletas.push({
+                id: f.id, numero_control: f.numero_control, estado: f.estado,
+                unidad: f.unidad, piloto: f.piloto, hora_salida: f.hora_salida, hora_entrada: f.hora_entrada,
+                minutos_trabajados: f.minutos_trabajados,
+                tripulacion: trip.rows.filter(t => t.emergencia_id === f.id).map(t => t.nombre_completo),
+                personal_destacado: f.personal_destacado,
+                personas: nombres.map((n, i) => ({ nombre: n, edad: edades[i] || null, traslado })),
+                fallecidos: f.hubo_fallecidos ? f.fallecidos : null,
+                insumos: insumos.rows.filter(i => i.emergencia_id === f.id).map(({ emergencia_id, ...i }) => i),
+                observaciones: f.observaciones
+            });
+        }
+        res.json({ periodo: p, incidentes, boletas: r.rows.length, limitado: r.rows.length === 500 });
+    } catch (error) { fallo(res, 'Error en servicios atendidos:', error); }
+};
+
+module.exports = { resumenAnual, proyeccion, salidasUnidad, personas, totalesTipo, serviciosDetalle };

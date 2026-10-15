@@ -397,8 +397,6 @@ onMounted(() => {
   .hc-tabla th, .hc-tabla td { border-color: #000 !important; }
   .celda-edit:hover { background: none !important; box-shadow: none !important; }
   .hc-firma .raya { border-top-color: #000 !important; }
-
-  @page { size: 21.6cm 33cm; margin: 1.2cm; }
 }
 
 @media (max-width: 1000px) {

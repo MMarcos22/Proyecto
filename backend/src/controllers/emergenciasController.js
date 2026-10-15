@@ -8,7 +8,11 @@
 //   · Para completarla no puede quedar ningún campo en blanco: cada uno lleva
 //     un valor o "No aplica" (entrevista 54:22).
 //   · La administración la marca como firmada en la revisión diaria; desde
-//     entonces no se edita, solo se anula con motivo.
+//     entonces no se edita, solo se anula con motivo. La administración ve
+//     las boletas por completar, pero no las completa.
+//   · Si salen varias unidades, cada una lleva su propia boleta (con su
+//     número, su piloto y su tripulación) y todas comparten el incidente.
+//   · Piloto y tripulación solo pueden ser personal del turno de guardia.
 const bcrypt = require('bcrypt');
 const { query, getClient } = require('../config/database');
 const { SUBTIPOS, CAMPOS_BOLETA, PREFIJOS_CONTROL } = require('../config/dominio');
@@ -49,6 +53,15 @@ const EDITABLES = new Set(['en_curso', 'pendiente', 'completa']);
 const HORA = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 
 const limpiar = (v) => (v === '' || v === undefined ? null : v);
+
+// Teléfono de Guatemala: 8 dígitos. Se guarda como «0000 0000».
+const NO_APLICA = 'No aplica';
+const telefonoValido = (t) => t == null || String(t).trim() === '' || t === NO_APLICA || /^\d{8}$/.test(String(t).replace(/\s/g, ''));
+const formatoTelefono = (t) => {
+    const n = String(t ?? '').replace(/\D/g, '');
+    return n.length === 8 ? `${n.slice(0, 4)} ${n.slice(4)}` : t;
+};
+const ERROR_TELEFONO = 'El teléfono debe tener 8 dígitos';
 const vacio = (v) => v === null || v === undefined || String(v).trim() === '';
 
 // Minutos entre salida y entrada; si la entrada es menor se asume que cruzó la medianoche
@@ -74,6 +87,28 @@ const validarInicio = (b) => {
     }
     if (b.subtipo && !SUBTIPOS[b.tipo_servicio][b.subtipo]) return 'Causa no válida para este tipo de servicio';
     return null;
+};
+
+// ¿Quién está de guardia en el turno? Su lista de personal o su escuadra
+const personalDelTurno = async (db, turnoId) => {
+    if (!turnoId) return null;
+    const r = await db.query(`
+    SELECT p.id FROM personal p, turnos t
+    WHERE t.id = $1 AND (p.nombre_completo = ANY(t.personal) OR (t.escuadra_id IS NOT NULL AND p.escuadra_id = t.escuadra_id))`, [turnoId]);
+    return new Set(r.rows.map(x => x.id));
+};
+
+// Piloto y tripulación deben ser del turno; quienes ya estaban en la boleta se respetan
+const verificarTurno = async (db, turnoId, ids, previos = []) => {
+    const nuevos = [...new Set(ids.map(entero).filter(Boolean))].filter(x => !previos.includes(x));
+    if (!nuevos.length) return;
+    const guardia = await personalDelTurno(db, turnoId);
+    if (!guardia) throw new ErrorNegocio('No hay turno abierto: abra el turno de guardia para asignar piloto y tripulación');
+    const fuera = nuevos.filter(x => !guardia.has(x));
+    if (fuera.length) {
+        const r = await db.query('SELECT nombre_completo FROM personal WHERE id = ANY($1::int[])', [fuera]);
+        throw new ErrorNegocio(`No están en el turno de guardia: ${r.rows.map(x => x.nombre_completo).join(', ')}`);
+    }
 };
 
 // Lo que impide completar la boleta: sector, causa y cada campo de la boleta oficial
@@ -110,6 +145,7 @@ const prepararBase = async (db, b) => {
         if (p.rows.length) datos.piloto = p.rows[0].nombre_completo;
     }
     datos.no_aplica = Array.isArray(b.no_aplica) ? [...new Set(b.no_aplica.map(String))] : [];
+    datos.solicitud_por_telefono = formatoTelefono(datos.solicitud_por_telefono);
     return datos;
 };
 
@@ -165,10 +201,13 @@ const asignarNumero = async (db, id) => {
 };
 
 // ¿Quién puede editar? En curso: cabina. Pendiente o completa: un miembro de la
-// tripulación con su PIN, o la administración (queda en la bitácora).
+// tripulación con su PIN. La administración no completa boletas (las rutas ya
+// la excluyen). Una boleta sin tripulación registrada la completa cabina.
 const verificarAutoria = async (db, req, id, estado) => {
-    if (req.usuario.rol === 'administrador') return { via: 'administracion' };
+    if (req.usuario.rol === 'administrador') throw new ErrorNegocio('La administración no completa boletas; lo hace la tripulación', 403);
     if (estado === 'en_curso') return { via: 'cabina' };
+    const sinTripulacion = await db.query('SELECT NOT EXISTS (SELECT 1 FROM boleta_tripulacion WHERE emergencia_id = $1) AS vacia', [id]);
+    if (sinTripulacion.rows[0].vacia) return { via: 'cabina', nombre: 'Cabina (sin tripulación registrada)' };
     const { personal_id, pin } = req.body?.autor || {};
     if (!personal_id || !pin) {
         throw new ErrorNegocio('Identifíquese con su PIN: solo la tripulación de este servicio puede completar la boleta', 403);
@@ -213,46 +252,99 @@ const registrarInsumos = async (db, id, fecha, insumos, usuarioId) => {
 };
 
 // ── REGISTRAR LLAMADA ────────────────────────────
-// Abre la boleta en curso. Si la unidad ya regresó (registro posterior), se
-// registra el regreso en el mismo acto y la boleta recibe su número.
+// Abre la boleta en curso. Si salen varias unidades, abre una boleta por
+// unidad, cada una con su piloto y su tripulación, ligadas al mismo incidente.
+// Si la unidad ya regresó (registro posterior), se registra el regreso en el
+// mismo acto y cada boleta recibe su número.
+const unidadesDe = (body) => {
+    const lista = Array.isArray(body.unidades) && body.unidades.length
+        ? body.unidades
+        : [{ unidad_id: body.unidad_id, piloto_id: body.piloto_id, tripulacion: body.tripulacion }];
+    return lista.map(u => ({
+        unidad_id: entero(u.unidad_id), piloto_id: entero(u.piloto_id),
+        tripulacion: [...new Set((Array.isArray(u.tripulacion) ? u.tripulacion : []).map(entero).filter(Boolean))]
+    }));
+};
+
+const validarUnidades = (lista) => {
+    const unidades = lista.map(u => u.unidad_id).filter(Boolean);
+    if (new Set(unidades).size !== unidades.length) return 'La misma unidad está elegida dos veces';
+    if (lista.length > 1 && lista.some(u => !u.unidad_id)) return 'Elija la unidad de cada boleta';
+    const vistos = new Set();
+    for (const u of lista) {
+        for (const p of new Set([...u.tripulacion, u.piloto_id].filter(Boolean))) {
+            if (vistos.has(p)) return 'Una misma persona no puede ir en dos unidades';
+            vistos.add(p);
+        }
+    }
+    return null;
+};
+
 const registrar = async (req, res) => {
     const error = validarInicio(req.body);
     if (error) return res.status(400).json({ mensaje: error });
+    if (!telefonoValido(req.body.solicitud_por_telefono)) return res.status(400).json({ mensaje: ERROR_TELEFONO });
+    const unidades = unidadesDe(req.body);
+    const errorUnidades = validarUnidades(unidades);
+    if (errorUnidades) return res.status(400).json({ mensaje: errorUnidades });
 
     const cliente = await getClient();
     try {
         await cliente.query('BEGIN');
-        const b = await prepararBase(cliente, req.body);
         const turno = await cliente.query('SELECT id FROM turnos WHERE fin IS NULL LIMIT 1');
+        const turnoId = turno.rows[0]?.id ?? null;
+        await verificarTurno(cliente, turnoId, unidades.flatMap(u => [u.piloto_id, ...u.tripulacion]));
 
-        const valores = CAMPOS_BASE.map(c => limpiar(b[c]));
-        valores.push(JSON.stringify(b.no_aplica), req.usuario.id, turno.rows[0]?.id ?? null);
-        const n = CAMPOS_BASE.length;
-        const ins = await cliente.query(`
-      INSERT INTO emergencias (${CAMPOS_BASE.join(', ')}, no_aplica, usuario_id, turno_id, estado)
-      VALUES (${CAMPOS_BASE.map((_, i) => `$${i + 1}`).join(', ')}, $${n + 1}, $${n + 2}, $${n + 3}, 'en_curso')
-      RETURNING id`, valores);
-        const id = ins.rows[0].id;
+        // Una unidad que ya está fuera no se despacha otra vez
+        const ocupadas = await cliente.query(`
+      SELECT u.codigo FROM emergencias e JOIN unidades u ON u.id = e.unidad_id
+      WHERE e.estado = 'en_curso' AND e.unidad_id = ANY($1::int[])`, [unidades.map(u => u.unidad_id).filter(Boolean)]);
+        if (ocupadas.rows.length) throw new ErrorNegocio(`La unidad ${ocupadas.rows.map(x => x.codigo).join(', ')} ya está fuera en otro servicio`);
 
-        await escribirDetalle(cliente, id, b);
-        const personal = await guardarTripulacion(cliente, id, req.body.tripulacion);
-        if (personal !== null) await cliente.query('UPDATE emergencias SET personal = $1 WHERE id = $2', [personal, id]);
+        const ids = [];
+        const numeros = [];
+        for (const u of unidades) {
+            const piloto = u.piloto_id
+                ? (await cliente.query('SELECT nombre_completo FROM personal WHERE id = $1', [u.piloto_id])).rows[0]?.nombre_completo
+                : null;
+            const b = await prepararBase(cliente, { ...req.body, unidad_id: u.unidad_id, piloto_id: u.piloto_id, conforme_piloto: piloto || null });
+            const valores = CAMPOS_BASE.map(c => limpiar(b[c]));
+            valores.push(JSON.stringify(b.no_aplica), req.usuario.id, turnoId, ids[0] ?? null);
+            const n = CAMPOS_BASE.length;
+            const ins = await cliente.query(`
+        INSERT INTO emergencias (${CAMPOS_BASE.join(', ')}, no_aplica, usuario_id, turno_id, incidente_id, estado)
+        VALUES (${CAMPOS_BASE.map((_, i) => `$${i + 1}`).join(', ')}, $${n + 1}, $${n + 2}, $${n + 3}, $${n + 4}, 'en_curso')
+        RETURNING id`, valores);
+            const id = ins.rows[0].id;
+            // La primera boleta da el número de incidente a las demás
+            if (!ids.length) await cliente.query('UPDATE emergencias SET incidente_id = id WHERE id = $1', [id]);
+            ids.push(id);
 
-        let numero = null;
-        if (req.body.regreso) {
-            if (!b.hora_entrada) await cliente.query('UPDATE emergencias SET hora_entrada = $1 WHERE id = $2', [horaGuatemala(), id]);
-            numero = await asignarNumero(cliente, id);
+            await escribirDetalle(cliente, id, b);
+            const personal = await guardarTripulacion(cliente, id, u.tripulacion);
+            if (personal !== null) await cliente.query('UPDATE emergencias SET personal = $1 WHERE id = $2', [personal, id]);
+
+            let numero = null;
+            if (req.body.regreso) {
+                if (!b.hora_entrada) await cliente.query('UPDATE emergencias SET hora_entrada = $1 WHERE id = $2', [horaGuatemala(), id]);
+                numero = await asignarNumero(cliente, id);
+                numeros.push(numero);
+            }
+            await registrarBitacora(cliente, req.usuario.id, 'crear', 'emergencia', id,
+                { numero_control: numero, regreso: !!req.body.regreso, incidente: ids[0], unidades: unidades.length });
         }
-        const alertas = await registrarInsumos(cliente, id, b.fecha, req.body.insumos, req.usuario.id);
-
-        await registrarBitacora(cliente, req.usuario.id, 'crear', 'emergencia', id,
-            { numero_control: numero, regreso: !!req.body.regreso });
+        // Los insumos que se anoten al registrar quedan en la primera boleta
+        const alertas = await registrarInsumos(cliente, ids[0], req.body.fecha, req.body.insumos, req.usuario.id);
         await cliente.query('COMMIT');
 
-        const fila = await leerFila({ query }, id);
+        const fila = await leerFila({ query }, ids[0]);
+        const varias = ids.length > 1;
         res.status(201).json({
-            mensaje: numero ? `Boleta ${numero} registrada; complétela cuando pueda` : 'La unidad salió; registre el regreso cuando vuelva',
-            emergencia: { id, numero_control: numero, estado: fila.estado, tipo_servicio: fila.tipo_servicio },
+            mensaje: numeros.length
+                ? (varias ? `Boletas ${numeros.join(', ')} registradas; complételas cuando pueda` : `Boleta ${numeros[0]} registrada; complétela cuando pueda`)
+                : (varias ? `Salieron ${ids.length} unidades; registre el regreso de cada una cuando vuelva` : 'La unidad salió; registre el regreso cuando vuelva'),
+            emergencia: { id: ids[0], numero_control: numeros[0] ?? null, estado: fila.estado, tipo_servicio: fila.tipo_servicio },
+            boletas: ids.map((id, i) => ({ id, numero_control: numeros[i] ?? null })),
             faltantes: faltantes(fila), alertas
         });
     } catch (e) {
@@ -311,6 +403,15 @@ const guardar = async (req, res) => {
             throw new ErrorNegocio('El tipo de servicio no se puede cambiar; anule la boleta y registre una nueva');
         }
         const autoria = await verificarAutoria(cliente, req, id, antes.estado);
+        if (req.body.solicitud_por_telefono !== antes.solicitud_por_telefono && !telefonoValido(req.body.solicitud_por_telefono)) {
+            throw new ErrorNegocio(ERROR_TELEFONO);
+        }
+        // Personal nuevo en la boleta: debe ser del turno en que se atendió el servicio
+        const previos = await cliente.query('SELECT personal_id FROM boleta_tripulacion WHERE emergencia_id = $1', [id]);
+        const yaEstaban = [...previos.rows.map(x => x.personal_id), antes.piloto_id].filter(Boolean);
+        const turnoBoleta = antes.turno_id ?? (await cliente.query('SELECT id FROM turnos WHERE fin IS NULL LIMIT 1')).rows[0]?.id;
+        await verificarTurno(cliente, turnoBoleta,
+            [req.body.piloto_id, ...(Array.isArray(req.body.tripulacion) ? req.body.tripulacion : [])], yaEstaban);
 
         const b = await prepararBase(cliente, req.body);
         const campos = CAMPOS_BASE.filter(c => c !== 'tipo_servicio');
@@ -453,7 +554,8 @@ const listar = async (req, res) => {
     if (fecha_fin || hasta) agregar('e.fecha <= ?', fecha_fin || hasta);
     if (unidad_id) agregar('e.unidad_id = ?', unidad_id);
     if (lugar_critico_id) agregar('e.lugar_critico_id = ?', lugar_critico_id);
-    if (personal_id) agregar('EXISTS (SELECT 1 FROM boleta_tripulacion t WHERE t.emergencia_id = e.id AND t.personal_id = ?)', personal_id);
+    if (personal_id) agregar('(e.piloto_id = ? OR EXISTS (SELECT 1 FROM boleta_tripulacion t WHERE t.emergencia_id = e.id AND t.personal_id = ?))', personal_id);
+    if (req.query.insumo_id) agregar('EXISTS (SELECT 1 FROM v_consumo_servicio c WHERE c.emergencia_id = e.id AND c.insumo_id = ?)', req.query.insumo_id);
     if (sector_id === 'sin') cond.push('e.sector_id IS NULL');
     else if (sector_id) agregar('e.sector_id = ?', sector_id);
     if (req.query.impresion === 'pendiente') cond.push(`e.impresa_en IS NULL AND e.estado IN ('completa', 'firmada')`);
@@ -484,6 +586,7 @@ const listar = async (req, res) => {
       SELECT e.id, e.numero_control, e.tipo_servicio, e.subtipo, e.fecha, e.hora_salida, e.hora_entrada,
              e.direccion, e.zona, s.nombre AS sector, e.unidad, e.piloto, e.minutos_trabajados,
              e.estado, e.impresa_en, e.impresiones, e.regreso_en, u.nombre_completo AS registrado_por,
+             (SELECT COUNT(*)::int FROM emergencias x WHERE x.incidente_id = e.incidente_id AND x.estado <> 'anulada') AS unidades_incidente,
              (SELECT COUNT(*)::int FROM v_consumo_servicio m WHERE m.emergencia_id = e.id) AS consumos
       ${de}
       ORDER BY e.fecha DESC, e.regreso_en DESC NULLS FIRST, e.hora_salida DESC NULLS LAST, e.id DESC
@@ -516,7 +619,7 @@ const obtenerPorId = async (req, res) => {
 
         const servicio = base.rows[0];
         const detalle = await query(`SELECT * FROM ${TABLAS_DETALLE[servicio.tipo_servicio]} WHERE emergencia_id = $1`, [id]);
-        const [insumos, tripulacion, historial, certificaciones] = await Promise.all([
+        const [insumos, tripulacion, historial, certificaciones, turno, incidente] = await Promise.all([
             query(`
         SELECT c.id, c.cantidad, i.id AS insumo_id, i.nombre, i.categoria, i.unidad_medida
         FROM v_consumo_servicio c JOIN insumos i ON i.id = c.insumo_id
@@ -533,8 +636,18 @@ const obtenerPorId = async (req, res) => {
         ORDER BY b.creado_en DESC`, [id]),
             query(`
         SELECT c.*, u.nombre_completo AS emitida_por FROM certificaciones c
-        JOIN usuarios u ON u.id = c.usuario_id WHERE c.emergencia_id = $1 ORDER BY c.creado_en DESC`, [id])
+        JOIN usuarios u ON u.id = c.usuario_id WHERE c.emergencia_id = $1 ORDER BY c.creado_en DESC`, [id]),
+            // Turno en que se atendió: de ahí sale el personal que se puede elegir
+            query(`
+        SELECT t.id, t.personal, t.escuadra_id, t.inicio, t.fin, es.nombre AS escuadra
+        FROM turnos t LEFT JOIN escuadras es ON es.id = t.escuadra_id WHERE t.id = $1`, [servicio.turno_id]),
+            // Las otras unidades que salieron al mismo incidente
+            query(`
+        SELECT e.id, e.numero_control, e.unidad, e.piloto, e.estado
+        FROM emergencias e WHERE e.incidente_id = $1 AND e.id <> $2 ORDER BY e.id`, [servicio.incidente_id ?? id, id])
         ]);
+        servicio.turno = turno.rows[0] || null;
+        servicio.incidente = incidente.rows;
         servicio.detalle = detalle.rows[0] || {};
         servicio.insumos = insumos.rows;
         servicio.tripulacion = tripulacion.rows;
@@ -550,11 +663,16 @@ const obtenerPorId = async (req, res) => {
 };
 
 // ── BOLETAS POR COMPLETAR (Inicio) ───────────────
+// Cabina y operativo ven solo las del turno de guardia activo (las del turno
+// anterior ya no les corresponden); la administración las ve todas para avisar.
 const porCompletar = async (req, res) => {
     try {
+        const delTurno = req.query.alcance !== 'todas';
         const r = await query(`
-      SELECT e.id FROM emergencias e WHERE e.estado = 'pendiente'
-      ORDER BY e.regreso_en NULLS LAST, e.id LIMIT 50`);
+      SELECT e.id FROM emergencias e
+      WHERE e.estado = 'pendiente'
+        ${delTurno ? 'AND e.turno_id = (SELECT id FROM turnos WHERE fin IS NULL LIMIT 1)' : ''}
+      ORDER BY e.regreso_en NULLS LAST, e.id LIMIT ${delTurno ? 50 : 200}`);
         const filas = [];
         for (const { id } of r.rows) {
             const f = await leerFila({ query }, id);
@@ -565,7 +683,7 @@ const porCompletar = async (req, res) => {
             filas.push({
                 id, numero_control: f.numero_control, tipo_servicio: f.tipo_servicio, fecha: f.fecha,
                 hora_entrada: f.hora_entrada, regreso_en: f.regreso_en, direccion: f.direccion,
-                sector: s.rows[0]?.nombre || null, unidad: f.unidad,
+                sector: s.rows[0]?.nombre || null, unidad: f.unidad, turno_id: f.turno_id,
                 tripulacion: trip.rows.map(x => x.nombre_completo), faltantes: faltantes(f)
             });
         }
@@ -761,7 +879,7 @@ const enCurso = async (req, res) => {
     try {
         const r = await query(`
       SELECT e.id, e.tipo_servicio, e.subtipo, e.fecha, e.hora_salida,
-             e.direccion, COALESCE(s.nombre, e.zona) AS sector, e.unidad, e.unidad_id, e.piloto, e.piloto_id, e.creado_en,
+             e.direccion, COALESCE(s.nombre, e.zona) AS sector, e.unidad, e.unidad_id, e.piloto, e.piloto_id, e.creado_en, e.incidente_id,
              COALESCE((SELECT array_agg(bt.personal_id) FROM boleta_tripulacion bt WHERE bt.emergencia_id = e.id), '{}') AS tripulacion
       FROM emergencias e LEFT JOIN sectores s ON s.id = e.sector_id
       WHERE e.estado = 'en_curso'
@@ -773,16 +891,18 @@ const enCurso = async (req, res) => {
     }
 };
 
-// ── LLAMANTE FRECUENTE: datos de la última boleta con ese teléfono ─
+// ── LLAMANTE FRECUENTE: nombre de la última boleta con ese teléfono ─
+// Solo se propone el nombre: la misma persona puede llamar desde lugares
+// distintos y una dirección anterior quedaría como si fuera la del servicio.
 const llamante = async (req, res) => {
     const telefono = (req.query.telefono || '').replace(/\D/g, '');
     if (telefono.length < 8) return res.json(null);
     try {
         const r = await query(`
-      SELECT e.solicitante, e.direccion, e.sector_id, COALESCE(s.nombre, e.zona) AS sector, e.fecha,
+      SELECT e.solicitante, e.fecha,
              (SELECT COUNT(*)::int FROM emergencias x
                WHERE regexp_replace(x.solicitud_por_telefono, '\\D', '', 'g') = $1) AS llamadas
-      FROM emergencias e LEFT JOIN sectores s ON s.id = e.sector_id
+      FROM emergencias e
       WHERE regexp_replace(e.solicitud_por_telefono, '\\D', '', 'g') = $1 AND e.estado <> 'anulada'
       ORDER BY e.fecha DESC, e.id DESC LIMIT 1`, [telefono]);
         res.json(r.rows[0] || null);

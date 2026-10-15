@@ -94,12 +94,13 @@
 
   <div class="bol-fila">
     <span class="bol-et">DONATIVO:</span>
-    <input v-model="d.donativo" class="bol-linea w-md" type="text" />
+    <input :value="dinero(d.donativo)" class="bol-linea w-md" type="text" />
     <span class="bol-et">EN LETRAS:</span>
     <input v-model="d.donativo_letras" class="bol-linea" type="text" />
   </div>
 </template>
 
 <script setup>
+import { dinero } from '../../utils/formato';
 const d = defineModel({ required: true });
 </script>

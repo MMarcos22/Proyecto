@@ -10,7 +10,7 @@
     <template v-else>
       <div v-if="!turno" class="aviso aviso-alerta mb">
         <Icono nombre="alerta" :tam="18" />
-        <div class="crecer">No hay turno abierto: la tripulación y las firmas no se pueden proponer.</div>
+        <div class="crecer">No hay turno abierto: piloto y tripulación solo se eligen del personal de guardia. Abra el turno para asignarlos.</div>
         <router-link to="/inicio" class="btn btn-secundario btn-sm">Abrir turno</router-link>
       </div>
 
@@ -41,18 +41,15 @@
         <div class="rejilla rejilla-2">
           <div class="campo">
             <label for="tel">Teléfono</label>
-            <input id="tel" v-model="d.solicitud_por_telefono" class="control num" inputmode="tel" placeholder="0000 0000" @blur="buscarLlamante" />
+            <input id="tel" :value="d.solicitud_por_telefono" class="control num" inputmode="numeric" maxlength="9"
+                   placeholder="0000 0000" autocomplete="off" @input="escribirTelefono" @blur="buscarLlamante" />
+            <span v-if="telefonoIncompleto" class="ayuda error-campo">El teléfono lleva 8 dígitos.</span>
           </div>
           <div class="campo">
             <label for="solic">Nombre de quien llama</label>
             <input id="solic" v-model="d.solicitante" class="control" />
+            <span v-if="nombreRecordado" class="ayuda">Nombre de llamadas anteriores con este número ({{ plural(llamante.llamadas, 'vez', 'veces') }}). Corríjalo si es otra persona.</span>
           </div>
-        </div>
-        <div v-if="llamante" class="recuerdo mb">
-          <Icono nombre="historial" :tam="18" />
-          <span class="crecer">Ya llamó {{ plural(llamante.llamadas, 'vez', 'veces') }}: <strong>{{ llamante.solicitante || 'sin nombre' }}</strong>, {{ llamante.direccion }}</span>
-          <button class="btn btn-azul btn-sm" @click="usarLlamante">Usar</button>
-          <button class="btn btn-plano btn-sm" @click="llamante = null">No</button>
         </div>
         <div class="campo">
           <label for="dir">Dirección <span class="req">*</span></label>
@@ -70,12 +67,13 @@
 
       <!-- ══ 3. QUIÉN SALE ══════════════════════════════ -->
       <section class="tarjeta bloque">
-        <h2 class="titulo-bloque">Unidad y tripulación</h2>
+        <h2 class="titulo-bloque">Unidades que salen</h2>
+        <p class="ayuda-bloque">Si el servicio requiere más de una unidad, elíjalas todas: cada una lleva su propia boleta, con su número, su piloto y su tripulación.</p>
         <div class="campo">
-          <span class="rotulo-campo">Unidad</span>
           <div class="opciones" style="--min-opcion: 190px">
             <button v-for="u in unidadesOrdenadas" :key="u.id" type="button" class="opcion unidad"
-                    :class="{ elegida: d.unidad_id === u.id }" :disabled="!!fuera(u)" @click="elegirUnidad(u, true)">
+                    :class="{ elegida: elegida(u) }" :disabled="!!fuera(u)" :aria-pressed="elegida(u)" @click="alternarUnidad(u)">
+              <span class="marca-check" aria-hidden="true">{{ elegida(u) ? '✓' : '' }}</span>
               <span>
                 {{ u.codigo }}
                 <small>{{ fuera(u) ? `Fuera · ${nombreTipo(fuera(u).tipo_servicio).toLowerCase()}` : u.descripcion || 'Unidad' }}</small>
@@ -83,15 +81,27 @@
             </button>
           </div>
         </div>
-        <div class="campo">
-          <span class="rotulo-campo">Piloto</span>
-          <MenuDesplegable :model-value="d.piloto_id" :opciones="opcionesPiloto" etiqueta="Piloto" placeholder="Elija el piloto…"
-                           @update:model-value="(id) => elegirPiloto(catalogos.persona(id), true)" />
+
+        <div v-for="(sal, i) in d.unidades" :key="sal.unidad_id" class="salida">
+          <h3 class="salida-titulo">
+            <span class="cuenta-boleta">Boleta {{ i + 1 }}</span>
+            Unidad {{ codigoUnidad(sal.unidad_id) }}
+            <button type="button" class="btn btn-plano btn-sm quitar" @click="quitarUnidad(i)">Quitar</button>
+          </h3>
+          <div class="rejilla rejilla-2">
+            <div class="campo">
+              <span class="rotulo-campo">Piloto</span>
+              <MenuDesplegable :model-value="sal.piloto_id" :opciones="opcionesPiloto(sal)" etiqueta="Piloto"
+                               :placeholder="turno ? 'Elija el piloto…' : 'Abra el turno para elegirlo'"
+                               @update:model-value="(id) => elegirPiloto(sal, id, true)" />
+            </div>
+            <div class="campo">
+              <span class="rotulo-campo">Tripulación</span>
+              <SelectorTripulacion v-model="sal.tripulacion" :turno="turno" :ocupados="ocupados" :excluidos="enOtraUnidad(sal)" />
+            </div>
+          </div>
         </div>
-        <div class="campo">
-          <span class="rotulo-campo">Tripulación</span>
-          <SelectorTripulacion v-model="d.tripulacion" :turno="turno" :ocupados="ocupados" />
-        </div>
+        <p v-if="!d.unidades.length" class="vacio-unidades">Sin unidad elegida.</p>
 
         <div class="horas">
           <template v-if="!cambiarHora">
@@ -125,7 +135,7 @@
           <span v-if="guardando === 'regreso'" class="cargador cargador-oscuro"></span>Servicio ya atendido
         </button>
         <button class="btn btn-primario btn-lg" :disabled="!!falta || !!guardando" @click="guardar(false)">
-          <span v-if="guardando === 'salida'" class="cargador"></span>La unidad salió
+          <span v-if="guardando === 'salida'" class="cargador"></span>{{ d.unidades.length > 1 ? `Salieron ${d.unidades.length} unidades` : 'La unidad salió' }}
         </button>
       </div>
     </footer>
@@ -139,8 +149,9 @@ import { emergencias, turnos, mensajeError } from '../services/api';
 import { useNotificacionesStore } from '../stores/notificaciones';
 import { useImpresionStore } from '../stores/impresion';
 import { useCatalogosStore, TIPOS, nombreTipo } from '../stores/catalogos';
-import { hoy, plural, fechaCorta } from '../utils/formato';
+import { hoy, plural, fechaCorta, telefonoTexto, telefonoCompleto } from '../utils/formato';
 import { normalizar } from '../utils/sector';
+import { estaDeTurno, personalDeTurno } from '../utils/turno';
 import { ESTACION } from '../utils/boleta';
 import Icono from '../components/Icono.vue';
 import SelectorSector from '../components/boleta/SelectorSector.vue';
@@ -164,7 +175,8 @@ const d = reactive({
   tipo_servicio: null,
   subtipo: null, fecha: hoy(), hora_aviso: horaAhora(), hora_salida: horaAhora(),
   solicitud_por_telefono: '', solicitante: '', direccion: '', sector_id: null, lugar_critico_id: null,
-  unidad_id: null, piloto_id: null, tripulacion: [],
+  // Una entrada por unidad que sale: cada una será una boleta
+  unidades: [],
   salida_de: ESTACION, entrada_a: ESTACION, radiotelefonista: '', vobo_jefe_servicio: '', jefes_servicio: ''
 });
 
@@ -172,10 +184,11 @@ const cargando = ref(true);
 const turno = ref(null);
 const enCurso = ref([]);
 const llamante = ref(null);
+const nombreRecordado = ref(false);
 const guardando = ref(null);
 const cambiarHora = ref(false);
-// La unidad y el piloto se proponen solos mientras la persona no los elija a mano
-const manual = reactive({ unidad: false, piloto: false });
+// La unidad se propone sola mientras la persona no elija a mano
+const unidadManual = ref(false);
 
 // ── Lo que ya está fuera: no se puede despachar dos veces ──
 const fuera = (u) => enCurso.value.find(s => s.unidad_id === u.id);
@@ -189,26 +202,37 @@ const ocupados = computed(() => {
 });
 const ocupado = (id) => ocupados.value[id];
 
-const deTurno = (p) => turno.value && (turno.value.personal?.includes(p.nombre_completo) || (turno.value.escuadra_id && p.escuadra_id === turno.value.escuadra_id));
+const deTurno = (p) => estaDeTurno(p, turno.value);
+const codigoUnidad = (id) => catalogos.unidades.find(u => u.id === id)?.codigo || '';
 
 // Unidades en servicio; primero las que atienden este tipo y están en la estación
 const unidadesOrdenadas = computed(() => catalogos.unidades
   .filter(u => (u.estado || 'servicio') === 'servicio')
   .map(u => ({ ...u, sirve: !d.tipo_servicio || (u.servicios || []).includes(d.tipo_servicio) }))
   .sort((a, b) => (!!fuera(a) - !!fuera(b)) || (b.sirve - a.sirve) || a.codigo.localeCompare(b.codigo)));
+const elegida = (u) => d.unidades.some(s => s.unidad_id === u.id);
 
-// Pilotos de guardia (o el ya elegido); el resto, en «Otro piloto…»
-// Pilotos primero; el resto del personal libre, por si maneja otra persona
-const opcionesPiloto = computed(() => [
-  ...pilotos.value.map(p => ({ valor: p.id, texto: p.nombre_completo, nota: ocupado(p.id) ? `en ${ocupado(p.id)}` : '', deshabilitado: !!ocupado(p.id), grupo: 'Pilotos' })),
-  ...otrosPilotos.value.map(p => ({ valor: p.id, texto: p.nombre_completo, grupo: 'Otro personal' }))
-]);
-const pilotos = computed(() => catalogos.personal
-  .filter(p => (p.es_piloto && (deTurno(p) || !turno.value)) || p.id === d.piloto_id)
-  .sort((a, b) => a.nombre_completo.localeCompare(b.nombre_completo)));
-const otrosPilotos = computed(() => catalogos.personal
-  .filter(p => !pilotos.value.includes(p) && !ocupado(p.id))
-  .sort((a, b) => (b.es_piloto - a.es_piloto) || a.nombre_completo.localeCompare(b.nombre_completo)));
+// Quién ya va en otra unidad de esta llamada: no puede ir en dos
+const enOtraUnidad = (sal) => {
+  const m = {};
+  for (const otra of d.unidades) {
+    if (otra === sal) continue;
+    for (const p of [otra.piloto_id, ...otra.tripulacion].filter(Boolean)) m[p] = `en ${codigoUnidad(otra.unidad_id)}`;
+  }
+  return m;
+};
+
+// Piloto: solo personal de guardia; los pilotos primero
+const opcionesPiloto = (sal) => {
+  const otra = enOtraUnidad(sal);
+  return personalDeTurno(catalogos.personal, turno.value, [sal.piloto_id])
+    .sort((a, b) => (b.es_piloto - a.es_piloto) || a.nombre_completo.localeCompare(b.nombre_completo))
+    .map(p => ({
+      valor: p.id, texto: p.nombre_completo, nota: ocupado(p.id) ? `en ${ocupado(p.id)}` : otra[p.id] || '',
+      deshabilitado: p.id !== sal.piloto_id && !!(ocupado(p.id) || otra[p.id]),
+      grupo: p.es_piloto ? 'Pilotos de guardia' : 'Otro personal de guardia'
+    }));
+};
 
 const mismoLugar = computed(() => {
   if (!d.sector_id && !d.direccion.trim()) return null;
@@ -217,55 +241,75 @@ const mismoLugar = computed(() => {
   return enCurso.value.find(s => (sector && s.sector === sector) || (dir.length > 8 && normalizar(s.direccion) === dir)) || null;
 });
 
+const telefonoIncompleto = computed(() => !!d.solicitud_por_telefono && !telefonoCompleto(d.solicitud_por_telefono));
+
 const falta = computed(() => !d.tipo_servicio ? 'Elija el tipo de servicio'
-  : !d.direccion.trim() ? 'Escriba la dirección' : !d.fecha || d.fecha > hoy() ? 'Revise la fecha' : '');
+  : !d.direccion.trim() ? 'Escriba la dirección'
+  : telefonoIncompleto.value ? 'El teléfono lleva 8 dígitos'
+  : !d.fecha || d.fecha > hoy() ? 'Revise la fecha' : '');
 
 const elegirTipo = (t) => {
   if (d.tipo_servicio !== t) d.subtipo = null;
   d.tipo_servicio = t;
-  if (!manual.unidad) proponerUnidad();
+  if (!unidadManual.value) proponerUnidad();
 };
 
 // Propone la primera unidad libre que atiende el tipo, con su piloto si está libre y de guardia
 const proponerUnidad = () => {
   const u = unidadesOrdenadas.value.find(x => x.sirve && !fuera(x));
-  if (u) elegirUnidad(u, false);
+  d.unidades = [];
+  if (u) agregarUnidad(u);
 };
 
-const elegirUnidad = (u, aMano) => {
-  if (aMano) manual.unidad = true;
-  d.unidad_id = u.id;
-  if (manual.piloto) return;
+const agregarUnidad = (u) => {
+  const sal = reactive({ unidad_id: u.id, piloto_id: null, tripulacion: [], pilotoManual: false });
+  d.unidades.push(sal);
   const asignado = catalogos.persona(u.piloto_id);
-  const libre = (p) => p && !ocupado(p.id);
-  const piloto = libre(asignado) && (deTurno(asignado) || !turno.value) ? asignado : pilotos.value.find(libre);
-  if (piloto) elegirPiloto(piloto, false);
+  const libre = (p) => p && !ocupado(p.id) && !enOtraUnidad(sal)[p.id];
+  const candidatos = personalDeTurno(catalogos.personal, turno.value).filter(p => p.es_piloto);
+  const piloto = libre(asignado) && deTurno(asignado) ? asignado : candidatos.find(libre);
+  if (piloto) elegirPiloto(sal, piloto.id, false);
 };
 
-const elegirPiloto = (p, aMano) => {
-  if (aMano) manual.piloto = true;
-  const anterior = d.piloto_id;
-  d.piloto_id = p.id;
-  // El piloto propuesto antes sale de la tripulación si fue el sistema quien lo puso
-  let lista = d.tripulacion.filter(x => !(x === anterior && x !== p.id && !aMano));
-  if (!lista.includes(p.id)) lista = [...lista, p.id];
-  d.tripulacion = lista;
+const alternarUnidad = (u) => {
+  unidadManual.value = true;
+  const i = d.unidades.findIndex(s => s.unidad_id === u.id);
+  if (i >= 0) quitarUnidad(i);
+  else agregarUnidad(u);
+};
+const quitarUnidad = (i) => {
+  unidadManual.value = true;
+  d.unidades.splice(i, 1);
 };
 
+const elegirPiloto = (sal, id, aMano) => {
+  if (aMano) sal.pilotoManual = true;
+  const anterior = sal.piloto_id;
+  sal.piloto_id = id;
+  // El piloto va también en la tripulación; el que puso el sistema antes se retira
+  let lista = sal.tripulacion.filter(x => !(x === anterior && x !== id && !aMano));
+  if (id && !lista.includes(id)) lista = [...lista, id];
+  sal.tripulacion = lista;
+};
+
+const escribirTelefono = (e) => {
+  d.solicitud_por_telefono = telefonoTexto(e.target.value);
+  e.target.value = d.solicitud_por_telefono;
+  if (telefonoCompleto(d.solicitud_por_telefono)) buscarLlamante();
+};
+
+// Si el número ya llamó antes, se propone solo el nombre: la dirección puede
+// cambiar de una llamada a otra y no debe quedar una anterior por error
 const buscarLlamante = async () => {
-  const tel = (d.solicitud_por_telefono || '').replace(/\D/g, '');
-  if (tel.length < 8) return;
+  if (!telefonoCompleto(d.solicitud_por_telefono)) return;
   try {
-    const { data } = await emergencias.llamante(tel);
-    llamante.value = data && data.direccion !== d.direccion ? data : null;
+    const { data } = await emergencias.llamante(d.solicitud_por_telefono);
+    llamante.value = data;
+    if (data?.solicitante && !d.solicitante.trim()) {
+      d.solicitante = data.solicitante;
+      nombreRecordado.value = true;
+    }
   } catch { llamante.value = null; }
-};
-const usarLlamante = () => {
-  const l = llamante.value;
-  if (!d.solicitante) d.solicitante = l.solicitante || '';
-  d.direccion = l.direccion;
-  if (l.sector_id) d.sector_id = l.sector_id;
-  llamante.value = null;
 };
 
 const salir = () => {
@@ -277,9 +321,10 @@ const salir = () => {
 const guardar = async (regreso) => {
   guardando.value = regreso ? 'regreso' : 'salida';
   try {
+    const { unidades, ...resto } = d;
     const { data } = await emergencias.registrar({
-      ...d, regreso,
-      conforme_piloto: catalogos.persona(d.piloto_id)?.nombre_completo || null
+      ...resto, regreso,
+      unidades: unidades.map(u => ({ unidad_id: u.unidad_id, piloto_id: u.piloto_id, tripulacion: u.tripulacion }))
     });
     impresion.contarPendientes();
     notif.exito(data.mensaje);
@@ -320,6 +365,8 @@ onMounted(async () => {
 
 .bloque { padding: 18px 22px 4px; margin-bottom: 14px; }
 .titulo-bloque { font-size: 16px; margin-bottom: 14px; }
+.ayuda-bloque { margin: -6px 0 14px; font-size: 14px; color: var(--texto-suave); }
+.error-campo { color: var(--peligro); font-weight: 600; }
 
 .tipos { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
 .opcion-tipo { min-height: 58px; font-size: 14.5px; gap: 10px; padding: 8px 12px; }
@@ -329,15 +376,20 @@ onMounted(async () => {
   color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
 }
 
-.recuerdo {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 10px 14px; border-radius: var(--radio-lg);
-  background: var(--superficie-alt); border: 1px solid var(--borde); font-size: 14.5px;
-}
-.recuerdo > svg { color: var(--texto-tenue); }
-
-.unidad { min-height: 60px; font-size: 16px; }
+.unidad { min-height: 60px; font-size: 16px; gap: 10px; }
 .unidad small { font-size: 12.5px; }
+.marca-check {
+  width: 24px; height: 24px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--borde-fuerte); border-radius: 7px; font-size: 14px;
+}
+.elegida .marca-check { background: var(--acento); border-color: var(--acento); color: #fff; }
+
+.salida { padding: 14px 16px 2px; margin-bottom: 12px; border: 1px solid var(--borde); border-radius: var(--radio-lg); background: var(--superficie-alt); }
+.salida-titulo { display: flex; align-items: center; gap: 10px; font-size: 15px; margin-bottom: 12px; }
+.salida-titulo .quitar { margin-left: auto; }
+.cuenta-boleta { padding: 2px 9px; border-radius: 999px; background: var(--acento-tenue); color: var(--acento-texto); font-size: 12.5px; font-weight: 600; }
+.vacio-unidades { margin-bottom: 14px; color: var(--texto-tenue); font-size: 14px; }
 
 .horas {
   display: flex; align-items: center; gap: 10px;

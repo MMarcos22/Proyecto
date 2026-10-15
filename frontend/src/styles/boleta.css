@@ -381,9 +381,32 @@ select.bol-linea {
         color: transparent !important;
     }
 
-    @page {
-        size: 21.6cm 33cm;
-        margin: 0;
+    /* Un pelo menos que la hoja: evita que el redondeo agregue una página en blanco */
+    .hoja-oficio {
+        height: 32.9cm;
+    }
+}
+
+/* ── PÁGINAS AL IMPRIMIR ───────────────────────
+   Todo se imprime en hoja oficio. La boleta y el vale son hojas oficiales:
+   página sin márgenes, así el navegador no agrega arriba la fecha y el título
+   ni abajo la dirección de la página (localhost). Los listados e informes
+   llevan margen. Las páginas con nombre no dependen de qué otra pantalla se
+   abrió antes. */
+@page {
+    size: 21.6cm 33cm;
+    margin: 1.2cm;
+}
+
+@page hoja-oficial {
+    size: 21.6cm 33cm;
+    margin: 0;
+}
+
+@media print {
+    .hoja-oficio,
+    .vale {
+        page: hoja-oficial;
     }
 }
 

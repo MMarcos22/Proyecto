@@ -163,7 +163,8 @@ const guardandoClave = ref(false);
 const clave = reactive({ actual: '', nueva: '', repetir: '' });
 
 const primerNombre = computed(() => (auth.usuario?.nombre || '').split(' ')[0]);
-const puedeRegistrar = computed(() => !!auth.usuario && auth.puedeEditar);
+// Registrar llamada: el botón rojo del lateral, solo para quien atiende servicios (cabina y operativo)
+const puedeRegistrar = computed(() => !!auth.usuario && auth.atiendeServicios);
 const seccion = computed(() => SECCIONES[ruta.meta.seccion] || {});
 
 // Menú: una entrada por sección, agrupadas; lleva a la primera página que el rol puede abrir

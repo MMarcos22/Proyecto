@@ -331,7 +331,7 @@ const main = async () => {
 
         const usuarios = (await db.query(`SELECT id, rol FROM usuarios WHERE activo ORDER BY id`)).rows;
         const admin = usuarios.find(u => u.rol === 'administrador').id;
-        const operativo = (usuarios.find(u => u.rol === 'operativo') || { id: admin }).id;
+        const operativo = (usuarios.find(u => ['cabina', 'operativo'].includes(u.rol)) || { id: admin }).id;
 
         // ── Catálogos ─────────────────────────────────────────
         const sectores = [];
@@ -658,10 +658,15 @@ const main = async () => {
                 numero_control = CASE e.tipo_servicio WHEN 'ambulancia' THEN 'AMB' WHEN 'incendio' THEN 'INC'
                     WHEN 'rescate' THEN 'RES' WHEN 'varios' THEN 'VAR' ELSE 'AGU' END || '-' || o.anio || '-' || LPAD(o.n::text, 4, '0')
             FROM orden o WHERE o.id = e.id`);
-        // Usuario de consulta para la dirección
+        // Cada boleta simulada es un incidente de una sola unidad
+        await db.query('UPDATE emergencias SET incidente_id = id WHERE incidente_id IS NULL');
+        // Usuarios de consulta (dirección) y de la computadora de cabina
         await db.query(`INSERT INTO usuarios (usuario, password_hash, nombre_completo, rol)
             SELECT 'direccion', crypt('direccion123', gen_salt('bf', 10)), 'Jefe de la compañía', 'direccion'
             WHERE NOT EXISTS (SELECT 1 FROM usuarios WHERE usuario = 'direccion')`);
+        await db.query(`INSERT INTO usuarios (usuario, password_hash, nombre_completo, rol)
+            SELECT 'cabina', crypt('cabina123', gen_salt('bf', 10)), 'Cabina de radio', 'cabina'
+            WHERE NOT EXISTS (SELECT 1 FROM usuarios WHERE usuario = 'cabina')`);
 
         // Horas reales en lotes y movimientos (el servicio usa la hora del servidor)
         await db.query(`UPDATE lotes SET creado_en = fecha_ingreso + TIME '09:00'`);
