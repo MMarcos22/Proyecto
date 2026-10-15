@@ -3,7 +3,7 @@ const router = express.Router();
 
 const c = require('../controllers/emergenciasController');
 const { verificarToken } = require('../middleware/auth');
-const { soloAdministrador, atiendenServicios, ambosRoles, todosLosRoles, gestion } = require('../middleware/roles');
+const { soloAdministrador, atiendenServicios, registranLlamadas, ambosRoles, todosLosRoles, gestion } = require('../middleware/roles');
 
 router.use(verificarToken);
 
@@ -17,7 +17,7 @@ router.get('/llamante', todosLosRoles, c.llamante);
 router.post('/impresas', ambosRoles, c.marcarImpresa);
 router.post('/firmar', soloAdministrador, c.firmar);
 router.get('/:id', todosLosRoles, c.obtenerPorId);
-router.post('/', atiendenServicios, c.registrar);
+router.post('/', registranLlamadas, c.registrar);
 // La administración ve las boletas por completar, pero las completa la tripulación
 router.put('/:id', atiendenServicios, c.guardar);
 router.post('/:id/regreso', atiendenServicios, c.registrarRegreso);
