@@ -31,6 +31,17 @@
     </template>
 
     <template v-else>
+      <!-- ══ REGISTRAR LLAMADA: lo primero que se ve ═══ -->
+      <section v-if="auth.puedeEditar" class="tarjeta registrar-inicio mb-bloque">
+        <h2>Registrar llamada</h2>
+        <nav class="tipos-llamada">
+          <router-link v-for="t in TIPOS" :key="t.valor" :to="`/boleta/nueva?tipo=${t.valor}`" :class="`tipo-${t.valor}`">
+            <span class="icono-tipo"><Icono :nombre="t.valor" :tam="22" :grosor="2.2" /></span>
+            <span>{{ t.nombre }}</span>
+          </router-link>
+        </nav>
+      </section>
+
       <!-- ══ CIFRAS DEL MOMENTO ═══════════════════════ -->
       <section class="indicadores mb-bloque">
         <div class="indicador">
@@ -129,17 +140,6 @@
               <p class="sin-turno-texto"><Icono nombre="alerta" :tam="18" />No hay turno abierto</p>
               <button class="btn btn-primario btn-bloque" @click="abrirTurno()">Abrir turno</button>
             </div>
-          </section>
-
-          <section v-if="auth.puedeEditar" class="tarjeta">
-            <div class="tarjeta-cabecera"><h3>Registrar llamada</h3></div>
-            <nav class="lista-lado">
-              <router-link v-for="t in TIPOS" :key="t.valor" :to="`/boleta/nueva?tipo=${t.valor}`" :class="`tipo-${t.valor}`">
-                <span class="icono-tipo"><Icono :nombre="t.valor" :tam="18" :grosor="2.2" /></span>
-                <span class="crecer">{{ t.nombre }}</span>
-                <Icono nombre="chevron_der" :tam="14" />
-              </router-link>
-            </nav>
           </section>
 
           <section v-if="auth.esAdministrador" class="tarjeta">
@@ -441,6 +441,18 @@ onUnmounted(() => clearInterval(reloj));
 .datos-lado dd { text-align: right; font-weight: 500; }
 .sin-turno-texto { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-weight: 600; color: var(--alerta); }
 
+.registrar-inicio { padding: 18px 20px 20px; }
+.registrar-inicio h2 { font-size: 17px; margin-bottom: 14px; }
+.tipos-llamada { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.tipos-llamada a {
+  display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 14px;
+  border: 1px solid var(--borde); border-radius: var(--radio-lg); background: var(--superficie);
+  font-size: 15px; font-weight: 600; color: var(--texto); text-decoration: none;
+  transition: border-color var(--transicion), box-shadow var(--transicion), transform var(--transicion);
+}
+.tipos-llamada a:hover { border-color: var(--c); box-shadow: var(--sombra); transform: translateY(-1px); }
+.tipos-llamada .icono-tipo { width: 42px; height: 42px; }
+
 .lista-lado { padding: 6px; }
 .lista-lado a {
   display: flex; align-items: center; gap: 12px; padding: 10px 12px;
@@ -484,5 +496,9 @@ onUnmounted(() => clearInterval(reloj));
 
 @media (max-width: 1100px) {
   .tablero { grid-template-columns: 1fr; }
+  .tipos-llamada { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .tipos-llamada { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
