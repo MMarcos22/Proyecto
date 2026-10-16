@@ -1,13 +1,18 @@
 <template>
   <div class="llamada animar">
     <header class="titulo-seccion">
-      <div><h1>Registrar llamada</h1></div>
+      <div><h1>{{ incidente ? 'Otra unidad para el incidente' : 'Registrar llamada' }}</h1></div>
       <button class="btn btn-secundario" @click="salir">Cancelar</button>
     </header>
 
     <div v-if="cargando" class="centro"><span class="cargador cargador-oscuro"></span></div>
 
     <template v-else>
+      <div v-if="incidente" class="aviso aviso-info mb">
+        <Icono nombre="ambulancia" :tam="18" />
+        <div class="crecer">Se agrega al incidente de <strong>{{ incidente.direccion }}</strong> ({{ nombreTipo(incidente.tipo_servicio).toLowerCase() }}<template v-if="incidente.unidad">, unidad {{ incidente.unidad }}</template>). La nueva unidad lleva su propia boleta, con el tipo de servicio que le corresponda.</div>
+      </div>
+
       <div v-if="!turno" class="aviso aviso-alerta mb">
         <Icono nombre="alerta" :tam="18" />
         <div class="crecer">No hay turno abierto: piloto y tripulación solo se eligen del personal de guardia. Abra el turno para asignarlos.</div>
@@ -88,6 +93,15 @@
             Unidad {{ codigoUnidad(sal.unidad_id) }}
             <button type="button" class="btn btn-plano btn-sm quitar" @click="quitarUnidad(i)">Quitar</button>
           </h3>
+          <div class="campo">
+            <span class="rotulo-campo">Sale por</span>
+            <div class="tipos-unidad" role="group" :aria-label="`Tipo de servicio de la unidad ${codigoUnidad(sal.unidad_id)}`">
+              <button v-for="t in TIPOS" :key="t.valor" type="button" class="chip-tipo" :class="[`tipo-${t.valor}`, { elegida: sal.tipo_servicio === t.valor }]"
+                      :aria-pressed="sal.tipo_servicio === t.valor" @click="sal.tipo_servicio = t.valor; sal.tipoPropio = true">
+                <Icono :nombre="t.valor" :tam="15" :grosor="2.2" />{{ t.corto }}
+              </button>
+            </div>
+          </div>
           <div class="rejilla rejilla-2">
             <div class="campo">
               <span class="rotulo-campo">Piloto</span>
@@ -185,6 +199,8 @@ const turno = ref(null);
 const enCurso = ref([]);
 const llamante = ref(null);
 const nombreRecordado = ref(false);
+// Incidente en curso al que se agrega otra unidad (/boleta/nueva?incidente=ID)
+const incidente = ref(null);
 const guardando = ref(null);
 const cambiarHora = ref(false);
 // La unidad se propone sola mientras la persona no elija a mano
@@ -251,6 +267,8 @@ const falta = computed(() => !d.tipo_servicio ? 'Elija el tipo de servicio'
 const elegirTipo = (t) => {
   if (d.tipo_servicio !== t) d.subtipo = null;
   d.tipo_servicio = t;
+  // Las unidades a las que no se les eligió otro tipo siguen el de la llamada
+  for (const sal of d.unidades) if (!sal.tipoPropio) sal.tipo_servicio = t;
   if (!unidadManual.value) proponerUnidad();
 };
 
@@ -261,8 +279,18 @@ const proponerUnidad = () => {
   if (u) agregarUnidad(u);
 };
 
+// Cada unidad sale por un tipo de servicio: el de la llamada si la unidad lo atiende;
+// si no, el primero que atiende (la ambulancia que acompaña a la motobomba va por ambulancia)
+const tipoPara = (u) => {
+  const servicios = u.servicios || [];
+  if (!d.tipo_servicio || !servicios.length || servicios.includes(d.tipo_servicio)) return d.tipo_servicio;
+  return servicios[0];
+};
+
 const agregarUnidad = (u) => {
-  const sal = reactive({ unidad_id: u.id, piloto_id: null, tripulacion: [], pilotoManual: false });
+  const tipo = tipoPara(u);
+  const sal = reactive({ unidad_id: u.id, piloto_id: null, tripulacion: [], pilotoManual: false,
+    tipo_servicio: tipo, tipoPropio: !!tipo && tipo !== d.tipo_servicio });
   d.unidades.push(sal);
   const asignado = catalogos.persona(u.piloto_id);
   const libre = (p) => p && !ocupado(p.id) && !enOtraUnidad(sal)[p.id];
@@ -324,7 +352,8 @@ const guardar = async (regreso) => {
     const { unidades, ...resto } = d;
     const { data } = await emergencias.registrar({
       ...resto, regreso,
-      unidades: unidades.map(u => ({ unidad_id: u.unidad_id, piloto_id: u.piloto_id, tripulacion: u.tripulacion }))
+      incidente_id: incidente.value?.id,
+      unidades: unidades.map(u => ({ unidad_id: u.unidad_id, piloto_id: u.piloto_id, tripulacion: u.tripulacion, tipo_servicio: u.tipo_servicio || d.tipo_servicio }))
     });
     impresion.contarPendientes();
     notif.exito(data.mensaje);
@@ -349,6 +378,16 @@ onMounted(async () => {
       d.radiotelefonista = t.data.radiotelefonista || '';
       d.vobo_jefe_servicio = t.data.jefe_servicio || '';
       d.jefes_servicio = t.data.jefe_servicio || '';
+    }
+    // Otra unidad para un incidente en curso: la llamada ya está tomada
+    if (ruta.query.incidente) {
+      const { data: inc } = await emergencias.obtener(ruta.query.incidente);
+      incidente.value = inc;
+      Object.assign(d, {
+        direccion: inc.direccion || '', sector_id: inc.sector_id, lugar_critico_id: inc.lugar_critico_id,
+        solicitante: inc.solicitante || '', solicitud_por_telefono: inc.solicitud_por_telefono || '',
+        fecha: inc.fecha, hora_aviso: inc.hora_aviso?.slice(0, 5) || d.hora_aviso
+      });
     }
     if (TIPOS.some(x => x.valor === ruta.query.tipo)) elegirTipo(ruta.query.tipo);
   } catch (e) {
@@ -389,6 +428,14 @@ onMounted(async () => {
 .salida-titulo { display: flex; align-items: center; gap: 10px; font-size: 15px; margin-bottom: 12px; }
 .salida-titulo .quitar { margin-left: auto; }
 .cuenta-boleta { padding: 2px 9px; border-radius: 999px; background: var(--acento-tenue); color: var(--acento-texto); font-size: 12.5px; font-weight: 600; }
+.tipos-unidad { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-tipo {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
+  border: 1px solid var(--borde-fuerte); border-radius: 999px; background: var(--superficie);
+  font: inherit; font-size: 13.5px; font-weight: 500; color: var(--texto-suave); cursor: pointer;
+}
+.chip-tipo svg { color: var(--c); }
+.chip-tipo.elegida { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, var(--superficie)); color: var(--texto); font-weight: 600; }
 .vacio-unidades { margin-bottom: 14px; color: var(--texto-tenue); font-size: 14px; }
 
 .horas {

@@ -55,6 +55,11 @@
               </tr>
             </thead>
             <tbody>
+              <tr v-for="l in t.liberados" :key="'l' + l.secuencia" class="liberado">
+                <td v-if="auth.esAdministrador"></td>
+                <td class="mono" colspan="6"><Icono nombre="info" :tam="14" /> {{ l.numero_control }} cambió de tipo de servicio y ahora es
+                  <router-link :to="`/historial/${l.emergencia_id}`" @click.stop>{{ l.paso_a }}</router-link>; este número no se vuelve a usar</td>
+              </tr>
               <tr v-for="h in huecosDe(t)" :key="'h' + h" class="hueco">
                 <td v-if="auth.esAdministrador"></td>
                 <td class="mono" colspan="6"><Icono nombre="alerta" :tam="14" /> Falta el número {{ numeroDe(t.tipo_servicio, h) }} en la secuencia</td>
@@ -78,15 +83,49 @@
         </div>
       </section>
 
+      <!-- ══ PENDIENTES DE DÍAS ANTERIORES ══════════════ -->
       <section v-if="datos.atrasadas.length" class="tarjeta mb">
-        <div class="tarjeta-cabecera"><h3>De días anteriores, aún sin firmar</h3><span class="nota">{{ datos.atrasadas.length }} boletas</span></div>
-        <ul class="atrasadas">
-          <li v-for="b in datos.atrasadas" :key="b.id">
-            <router-link :to="`/historial/${b.id}`" class="mono">{{ b.numero_control }}</router-link>
-            <span class="tipo" :class="`tipo-${b.tipo_servicio}`">{{ nombreTipo(b.tipo_servicio) }}</span>
-            <span class="tenue">regresó el {{ fechaHora(b.regreso_en) }}</span>
-          </li>
-        </ul>
+        <div class="tarjeta-cabecera cabecera-atrasadas">
+          <div>
+            <h3>De días anteriores, aún sin firmar <span class="cuenta-atr">{{ datos.atrasadas.length }}</span></h3>
+            <p class="nota">Las más antiguas primero. Las «por completar» esperan a la tripulación; las completas solo falta firmarlas.</p>
+          </div>
+          <div class="segmentos no-imprimir" role="group" aria-label="Filtrar">
+            <button :class="{ activo: filtroAtr === '' }" @click="filtroAtr = ''">Todas <span class="n">{{ datos.atrasadas.length }}</span></button>
+            <button :class="{ activo: filtroAtr === 'pendiente' }" @click="filtroAtr = 'pendiente'">Por completar <span class="n">{{ cuentaAtr.pendiente }}</span></button>
+            <button :class="{ activo: filtroAtr === 'completa' }" @click="filtroAtr = 'completa'">Por firmar <span class="n">{{ cuentaAtr.completa }}</span></button>
+          </div>
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla-atrasadas">
+            <thead>
+              <tr>
+                <th v-if="auth.esAdministrador" class="col-check"><span class="sr">Seleccionar</span></th>
+                <th>Número</th><th>Tipo y causa</th><th>Estado</th><th>Unidad</th><th>Sector</th><th>Regresó</th><th class="num">Espera</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="b in atrasadasVisibles" :key="b.id" class="fila-clic" @click="abrir(b)">
+                <td v-if="auth.esAdministrador" class="col-check" @click.stop>
+                  <input type="checkbox" :value="b.id" v-model="seleccion" :disabled="b.estado !== 'completa'" :aria-label="`Firmada ${b.numero_control}`" />
+                </td>
+                <td class="mono celda-principal">{{ b.numero_control }}</td>
+                <td>
+                  <span class="tipo" :class="`tipo-${b.tipo_servicio}`">{{ corteTipo(b.tipo_servicio) }}</span>
+                  <span class="celda-sec">{{ b.subtipo ? catalogos.nombreSubtipo(b.tipo_servicio, b.subtipo) : 'Sin causa' }}</span>
+                </td>
+                <td><span class="etiqueta" :class="CLASE_ESTADO[b.estado]">{{ b.estado === 'completa' ? 'Por firmar' : 'Por completar' }}</span></td>
+                <td class="mono">{{ b.unidad || '—' }}</td>
+                <td class="recortar">{{ b.sector || '—' }}</td>
+                <td class="mono nowrap">{{ fechaHora(b.regreso_en).slice(0, 10) }}<span class="celda-sec">{{ fechaHora(b.regreso_en).slice(11) }}</span></td>
+                <td class="num"><span class="espera" :class="claseEspera(b.dias)">{{ textoEspera(b.dias) }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <button v-if="atrasadasFiltradas.length > LIMITE_ATR" class="btn btn-plano btn-sm ver-mas no-imprimir" @click="verTodas = !verTodas">
+          {{ verTodas ? 'Ver menos' : `Ver las ${atrasadasFiltradas.length - LIMITE_ATR} restantes` }}
+        </button>
       </section>
     </template>
   </div>
@@ -99,7 +138,7 @@ import { emergencias, mensajeError } from '../services/api';
 import { useAuthStore } from '../stores/auth';
 import { useImpresionStore } from '../stores/impresion';
 import { useNotificacionesStore } from '../stores/notificaciones';
-import { useCatalogosStore, nombreTipo } from '../stores/catalogos';
+import { useCatalogosStore, nombreTipo, corteTipo } from '../stores/catalogos';
 import { hoy, sumarDias, fechaLarga, fechaHora } from '../utils/formato';
 import Icono from '../components/Icono.vue';
 
@@ -119,7 +158,7 @@ const cargando = ref(true);
 const seleccion = ref([]);
 const firmando = ref(false);
 
-const tiposConDatos = computed(() => (datos.value?.tipos || []).filter(t => t.boletas.length || huecosDe(t).length));
+const tiposConDatos = computed(() => (datos.value?.tipos || []).filter(t => t.boletas.length || huecosDe(t).length || t.liberados?.length));
 const totalHuecos = computed(() => (datos.value?.tipos || []).reduce((a, t) => a + t.huecos.length, 0));
 // Solo se señalan los huecos dentro del rango de números del día (los antiguos se ven en su día)
 const huecosDe = (t) => {
@@ -132,6 +171,19 @@ const numeroDe = (tipo, n) => `${PREFIJO[tipo]}-${fecha.value.slice(0, 4)}-${Str
 const rango = (t) => t.boletas.length ? `${t.boletas[0].numero_control} a ${t.boletas[t.boletas.length - 1].numero_control}` : '';
 
 const mover = (dias) => { fecha.value = sumarDias(fecha.value, dias); };
+
+// ── Pendientes de días anteriores ──
+const LIMITE_ATR = 10;
+const filtroAtr = ref('');
+const verTodas = ref(false);
+const cuentaAtr = computed(() => ({
+  pendiente: (datos.value?.atrasadas || []).filter(b => b.estado === 'pendiente').length,
+  completa: (datos.value?.atrasadas || []).filter(b => b.estado === 'completa').length
+}));
+const atrasadasFiltradas = computed(() => (datos.value?.atrasadas || []).filter(b => !filtroAtr.value || b.estado === filtroAtr.value));
+const atrasadasVisibles = computed(() => verTodas.value ? atrasadasFiltradas.value : atrasadasFiltradas.value.slice(0, LIMITE_ATR));
+const textoEspera = (d) => d >= 60 ? `${Math.floor(d / 30)} meses` : d >= 14 ? `${Math.floor(d / 7)} semanas` : d === 1 ? '1 día' : `${d} días`;
+const claseEspera = (d) => d > 30 ? 'larga' : d > 7 ? 'media' : '';
 const abrir = (b) => router.push(`/historial/${b.id}`);
 
 const cargar = async () => {
@@ -172,10 +224,19 @@ onMounted(() => { catalogos.cargar().catch(() => {}); cargar(); });
 .col-check input { width: 18px; height: 18px; cursor: pointer; }
 .hueco td { height: auto; padding: 10px 16px; color: var(--peligro); font-weight: 600; background: var(--peligro-fondo); }
 .hueco svg { vertical-align: -2px; margin-right: 4px; }
-.atrasadas { list-style: none; }
-.atrasadas li { display: flex; align-items: center; gap: 14px; padding: 10px 20px; border-bottom: 1px solid var(--borde); font-size: 14.5px; }
-.atrasadas li:last-child { border-bottom: none; }
-.atrasadas a { font-weight: 600; color: var(--texto); }
+.liberado td { height: auto; padding: 10px 16px; color: var(--info); font-weight: 500; background: var(--info-fondo); }
+.liberado svg { vertical-align: -2px; margin-right: 4px; }
+.cabecera-atrasadas { flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.cabecera-atrasadas .nota { margin-top: 4px; }
+.cuenta-atr { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--alerta-fondo, var(--superficie-hundida)); color: var(--alerta); font-size: 12.5px; font-weight: 700; vertical-align: 2px; }
+.segmentos .n { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: .75; }
+.tabla-atrasadas td { height: 48px; }
+.tabla-atrasadas .recortar { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.espera { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--superficie-hundida); color: var(--texto-suave); }
+.espera.media { background: var(--alerta-fondo, var(--superficie-hundida)); color: var(--alerta); }
+.espera.larga { background: var(--peligro-fondo); color: var(--peligro); }
+.ver-mas { margin: 8px 12px 12px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .membrete { display: none; }
 @media print {

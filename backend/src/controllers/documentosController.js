@@ -52,6 +52,10 @@ const registrar = async (req, res) => {
     const cliente = await getClient();
     try {
         await cliente.query('BEGIN');
+        if (tipo === 'vale') {
+            const r = await cliente.query('SELECT escuadra_id FROM personal WHERE id = $1', [entero(b.recibe_id)]);
+            if (r.rows[0]?.escuadra_id !== entero(b.escuadra_id)) throw new ErrorNegocio('Quien recibe el vale debe ser de la escuadra que lo retira');
+        }
         if (await mesCerrado(cliente, fecha) && !b.justificacion?.trim()) {
             throw new ErrorNegocio('Ese mes ya está cerrado. Para registrar un movimiento con esa fecha escriba la justificación', 409);
         }

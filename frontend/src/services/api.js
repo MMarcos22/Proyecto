@@ -58,6 +58,7 @@ export const emergencias = {
     registrar: (datos) => api.post('/emergencias', datos),
     guardar: (id, datos) => api.put(`/emergencias/${id}`, datos),
     regreso: (id, hora_entrada) => api.post(`/emergencias/${id}/regreso`, { hora_entrada }),
+    cambiarTipo: (id, tipo_servicio, autor) => api.post(`/emergencias/${id}/tipo`, { tipo_servicio, autor }),
     verificarPin: (id, autor) => api.post(`/emergencias/${id}/pin`, { autor }),
     firmar: (ids) => api.post('/emergencias/firmar', { ids }),
     certificar: (id, d) => api.post(`/emergencias/${id}/certificaciones`, d),

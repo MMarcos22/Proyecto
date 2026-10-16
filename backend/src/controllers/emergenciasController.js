@@ -15,7 +15,7 @@
 //   · Piloto y tripulación solo pueden ser personal del turno de guardia.
 const bcrypt = require('bcrypt');
 const { query, getClient } = require('../config/database');
-const { SUBTIPOS, CAMPOS_BOLETA, PREFIJOS_CONTROL } = require('../config/dominio');
+const { SUBTIPOS, CAMPOS_BOLETA, PREFIJOS_CONTROL, TIPOS_SERVICIO } = require('../config/dominio');
 const { registrarBitacora, entero, contable, FECHA_ISO, hoyGuatemala } = require('../utils/comun');
 const { ErrorNegocio, anularMovimiento } = require('../services/inventarioService');
 
@@ -182,21 +182,24 @@ const leerFila = async (db, id) => {
 
 // Asigna el siguiente número de control del tipo, en el orden en que se registra
 // el regreso. El candado evita que dos regresos simultáneos tomen el mismo número.
-const asignarNumero = async (db, id) => {
+// Un número liberado por un cambio de tipo no se vuelve a usar (pudo imprimirse).
+// conservarRegreso: al cambiar de tipo, la boleta mantiene su hora de regreso y su estado.
+const asignarNumero = async (db, id, { conservarRegreso = false } = {}) => {
     const e = await db.query('SELECT tipo_servicio, fecha, secuencia FROM emergencias WHERE id = $1 FOR UPDATE', [id]);
     const { tipo_servicio: tipo, fecha, secuencia } = e.rows[0];
     if (secuencia) return null;
     const anio = Number(String(fecha instanceof Date ? fecha.toISOString() : fecha).slice(0, 4));
     await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`control-${tipo}-${anio}`]);
     const r = await db.query(`
-    SELECT COALESCE(MAX(secuencia), 0) + 1 AS n FROM emergencias
-    WHERE tipo_servicio = $1 AND anio_secuencia = $2`, [tipo, anio]);
+    SELECT GREATEST(
+      (SELECT COALESCE(MAX(secuencia), 0) FROM emergencias WHERE tipo_servicio = $1 AND anio_secuencia = $2),
+      (SELECT COALESCE(MAX(secuencia), 0) FROM numeros_liberados WHERE tipo_servicio = $1 AND anio = $2)) + 1 AS n`, [tipo, anio]);
     const n = r.rows[0].n;
     const numero = `${PREFIJOS_CONTROL[tipo]}-${anio}-${String(n).padStart(4, '0')}`;
-    await db.query(`
-    UPDATE emergencias SET secuencia = $1, anio_secuencia = $2, numero_control = $3,
-           regreso_en = CURRENT_TIMESTAMP, estado = 'pendiente'
-    WHERE id = $4`, [n, anio, numero, id]);
+    await db.query(conservarRegreso
+        ? 'UPDATE emergencias SET secuencia = $1, anio_secuencia = $2, numero_control = $3 WHERE id = $4'
+        : `UPDATE emergencias SET secuencia = $1, anio_secuencia = $2, numero_control = $3,
+           regreso_en = CURRENT_TIMESTAMP, estado = 'pendiente' WHERE id = $4`, [n, anio, numero, id]);
     return numero;
 };
 
@@ -261,6 +264,8 @@ const unidadesDe = (body) => {
         ? body.unidades
         : [{ unidad_id: body.unidad_id, piloto_id: body.piloto_id, tripulacion: body.tripulacion }];
     return lista.map(u => ({
+        // Cada unidad sale por su propio tipo de servicio (la motobomba por incendio, la ambulancia por ambulancia)
+        tipo_servicio: TABLAS_DETALLE[u.tipo_servicio] ? u.tipo_servicio : body.tipo_servicio,
         unidad_id: entero(u.unidad_id), piloto_id: entero(u.piloto_id),
         tripulacion: [...new Set((Array.isArray(u.tripulacion) ? u.tripulacion : []).map(entero).filter(Boolean))]
     }));
@@ -301,15 +306,28 @@ const registrar = async (req, res) => {
       WHERE e.estado = 'en_curso' AND e.unidad_id = ANY($1::int[])`, [unidades.map(u => u.unidad_id).filter(Boolean)]);
         if (ocupadas.rows.length) throw new ErrorNegocio(`La unidad ${ocupadas.rows.map(x => x.codigo).join(', ')} ya está fuera en otro servicio`);
 
+        // Otra unidad que se pide para un incidente que ya está en curso
+        let incidenteId = null;
+        if (req.body.incidente_id) {
+            const inc = await cliente.query(`SELECT incidente_id FROM emergencias WHERE id = $1 AND estado <> 'anulada'`, [entero(req.body.incidente_id)]);
+            if (!inc.rows.length) throw new ErrorNegocio('El incidente al que se agrega la unidad no existe o está anulado', 404);
+            incidenteId = inc.rows[0].incidente_id ?? entero(req.body.incidente_id);
+        }
+
         const ids = [];
         const numeros = [];
         for (const u of unidades) {
             const piloto = u.piloto_id
                 ? (await cliente.query('SELECT nombre_completo FROM personal WHERE id = $1', [u.piloto_id])).rows[0]?.nombre_completo
                 : null;
-            const b = await prepararBase(cliente, { ...req.body, unidad_id: u.unidad_id, piloto_id: u.piloto_id, conforme_piloto: piloto || null });
+            // La causa elegida corresponde al tipo de la llamada; otra unidad con otro tipo la define al completar
+            const b = await prepararBase(cliente, {
+                ...req.body, tipo_servicio: u.tipo_servicio,
+                subtipo: u.tipo_servicio === req.body.tipo_servicio ? req.body.subtipo : null,
+                unidad_id: u.unidad_id, piloto_id: u.piloto_id, conforme_piloto: piloto || null
+            });
             const valores = CAMPOS_BASE.map(c => limpiar(b[c]));
-            valores.push(JSON.stringify(b.no_aplica), req.usuario.id, turnoId, ids[0] ?? null);
+            valores.push(JSON.stringify(b.no_aplica), req.usuario.id, turnoId, incidenteId ?? ids[0] ?? null);
             const n = CAMPOS_BASE.length;
             const ins = await cliente.query(`
         INSERT INTO emergencias (${CAMPOS_BASE.join(', ')}, no_aplica, usuario_id, turno_id, incidente_id, estado)
@@ -317,7 +335,7 @@ const registrar = async (req, res) => {
         RETURNING id`, valores);
             const id = ins.rows[0].id;
             // La primera boleta da el número de incidente a las demás
-            if (!ids.length) await cliente.query('UPDATE emergencias SET incidente_id = id WHERE id = $1', [id]);
+            if (!ids.length && !incidenteId) await cliente.query('UPDATE emergencias SET incidente_id = id WHERE id = $1', [id]);
             ids.push(id);
 
             await escribirDetalle(cliente, id, b);
@@ -331,7 +349,7 @@ const registrar = async (req, res) => {
                 numeros.push(numero);
             }
             await registrarBitacora(cliente, req.usuario.id, 'crear', 'emergencia', id,
-                { numero_control: numero, regreso: !!req.body.regreso, incidente: ids[0], unidades: unidades.length });
+                { numero_control: numero, regreso: !!req.body.regreso, incidente: incidenteId ?? ids[0], unidades: unidades.length, tipo: u.tipo_servicio });
         }
         // Los insumos que se anoten al registrar quedan en la primera boleta
         const alertas = await registrarInsumos(cliente, ids[0], req.body.fecha, req.body.insumos, req.usuario.id);
@@ -461,6 +479,83 @@ const guardar = async (req, res) => {
     } catch (e) {
         await cliente.query('ROLLBACK');
         responderError(res, e, 'Error al guardar boleta:');
+    } finally {
+        cliente.release();
+    }
+};
+
+// ── CAMBIAR EL TIPO DE SERVICIO ──────────────────
+// Llamaron por un choque y al llegar alguien está atrapado (rescate), o el herido
+// ya se fue y el servicio no se completó (servicios varios). La boleta cambia de
+// tipo y conserva fecha, horas, dirección, unidad, piloto y tripulación. Si ya
+// tenía número, recibe el siguiente del tipo nuevo y el anterior queda liberado.
+// Pacientes y rescatados pasan de un tipo al otro; la causa se vuelve a elegir.
+const PASAN_ENTRE_TIPOS = {
+    'ambulancia>rescate': { nombres_pacientes: 'nombres_rescatados', edades: 'edades', domicilios: 'domicilios' },
+    'rescate>ambulancia': { nombres_rescatados: 'nombres_pacientes', edades: 'edades', domicilios: 'domicilios' }
+};
+
+const cambiarTipo = async (req, res) => {
+    const id = entero(req.params.id);
+    const nuevo = req.body?.tipo_servicio;
+    if (!TABLAS_DETALLE[nuevo]) return res.status(400).json({ mensaje: 'Tipo de servicio no válido' });
+
+    const cliente = await getClient();
+    try {
+        await cliente.query('BEGIN');
+        const e = await cliente.query('SELECT * FROM emergencias WHERE id = $1 FOR UPDATE', [id]);
+        if (!e.rows.length) throw new ErrorNegocio('Servicio no encontrado', 404);
+        const antes = e.rows[0];
+        if (!EDITABLES.has(antes.estado)) {
+            throw new ErrorNegocio(antes.estado === 'firmada'
+                ? 'La boleta ya está firmada: para cambiar el tipo, anúlela con motivo y registre una nueva'
+                : 'La boleta está anulada');
+        }
+        if (antes.tipo_servicio === nuevo) throw new ErrorNegocio('La boleta ya es de ese tipo');
+        const autoria = await verificarAutoria(cliente, req, id, antes.estado);
+
+        // Detalle: lo que existe en ambos tipos pasa; lo demás se llena en el tipo nuevo
+        const det = (await cliente.query(`SELECT * FROM ${TABLAS_DETALLE[antes.tipo_servicio]} WHERE emergencia_id = $1`, [id])).rows[0] || {};
+        const pasa = PASAN_ENTRE_TIPOS[`${antes.tipo_servicio}>${nuevo}`] || {};
+        const detalleNuevo = { tipo_servicio: nuevo };
+        for (const [de, a] of Object.entries(pasa)) detalleNuevo[a] = det[de] ?? null;
+        await cliente.query(`DELETE FROM ${TABLAS_DETALLE[antes.tipo_servicio]} WHERE emergencia_id = $1`, [id]);
+        await escribirDetalle(cliente, id, detalleNuevo);
+
+        // «No aplica» solo de los campos que también existen en el tipo nuevo
+        const clavesNuevo = new Set((CAMPOS_BOLETA[nuevo] || []).map(c => c.clave));
+        const noAplica = (Array.isArray(antes.no_aplica) ? antes.no_aplica : []).filter(c => clavesNuevo.has(c));
+        await cliente.query(`
+      UPDATE emergencias SET tipo_servicio = $1, subtipo = NULL, no_aplica = $2,
+        estado = CASE WHEN estado = 'completa' THEN 'pendiente' ELSE estado END,
+        completada_en = CASE WHEN estado = 'completa' THEN NULL ELSE completada_en END,
+        impresa_en = NULL, actualizado_por = $3, actualizado_en = CURRENT_TIMESTAMP
+      WHERE id = $4`, [nuevo, JSON.stringify(noAplica), req.usuario.id, id]);
+
+        // Número: el anterior queda liberado y la boleta recibe el siguiente del tipo nuevo
+        let numero = null;
+        if (antes.secuencia) {
+            await cliente.query('UPDATE emergencias SET secuencia = NULL, anio_secuencia = NULL, numero_control = NULL WHERE id = $1', [id]);
+            numero = await asignarNumero(cliente, id, { conservarRegreso: true });
+            await cliente.query(`
+        INSERT INTO numeros_liberados (tipo_servicio, anio, secuencia, numero_control, emergencia_id, paso_a, usuario_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                [antes.tipo_servicio, antes.anio_secuencia, antes.secuencia, antes.numero_control, id, numero, req.usuario.id]);
+        }
+
+        await registrarBitacora(cliente, req.usuario.id, 'cambiar_tipo', 'emergencia', id, {
+            de: antes.tipo_servicio, a: nuevo, numero_anterior: antes.numero_control, numero_nuevo: numero, _por: autoria
+        });
+        await cliente.query('COMMIT');
+        res.json({
+            mensaje: numero
+                ? `La boleta pasó a ${TIPOS_SERVICIO[nuevo].toLowerCase()}: ahora es ${numero} (antes ${antes.numero_control})`
+                : `La boleta pasó a ${TIPOS_SERVICIO[nuevo].toLowerCase()}`,
+            tipo_servicio: nuevo, numero_control: numero ?? antes.numero_control, numero_anterior: antes.numero_control
+        });
+    } catch (err) {
+        await cliente.query('ROLLBACK');
+        responderError(res, err, 'Error al cambiar el tipo de servicio:');
     } finally {
         cliente.release();
     }
@@ -718,19 +813,28 @@ const revision = async (req, res) => {
       FROM maximos m CROSS JOIN LATERAL generate_series(1, m.maximo) AS g(n)
       WHERE NOT EXISTS (SELECT 1 FROM emergencias e WHERE e.tipo_servicio = m.tipo_servicio
                         AND e.anio_secuencia = m.anio_secuencia AND e.secuencia = g.n)
+        AND NOT EXISTS (SELECT 1 FROM numeros_liberados l WHERE l.tipo_servicio = m.tipo_servicio
+                        AND l.anio = m.anio_secuencia AND l.secuencia = g.n)
       ORDER BY 1, 2`, [fecha]);
+
+        // Números que dejó libres un cambio de tipo ese día: no son un error
+        const liberados = await query(`
+      SELECT l.tipo_servicio, l.secuencia, l.numero_control, l.paso_a, l.emergencia_id
+      FROM numeros_liberados l WHERE l.creado_en::date = $1::date ORDER BY l.tipo_servicio, l.secuencia`, [fecha]);
 
         // Pendientes de días anteriores: siguen esperando a la tripulación
         const atrasadas = await query(`
-      SELECT e.id, e.numero_control, e.tipo_servicio, e.regreso_en, e.unidad
-      FROM emergencias e
+      SELECT e.id, e.numero_control, e.tipo_servicio, e.subtipo, e.estado, e.regreso_en, e.unidad,
+             COALESCE(s.nombre, e.zona) AS sector, ($1::date - e.regreso_en::date) AS dias
+      FROM emergencias e LEFT JOIN sectores s ON s.id = e.sector_id
       WHERE e.estado IN ('pendiente', 'completa') AND e.regreso_en::date < $1::date
       ORDER BY e.regreso_en`, [fecha]);
 
         const tipos = Object.keys(TABLAS_DETALLE).map(t => ({
             tipo_servicio: t,
             boletas: r.rows.filter(x => x.tipo_servicio === t),
-            huecos: huecos.rows.filter(x => x.tipo_servicio === t).map(x => x.secuencia)
+            huecos: huecos.rows.filter(x => x.tipo_servicio === t).map(x => x.secuencia),
+            liberados: liberados.rows.filter(x => x.tipo_servicio === t)
         }));
         res.json({
             fecha, tipos, atrasadas: atrasadas.rows,
@@ -914,7 +1018,7 @@ const llamante = async (req, res) => {
 
 module.exports = {
     enCurso, llamante, marcarImpresa, contadores, porCompletar, revision,
-    registrar, registrarRegreso, guardar, verificarPin, firmar, anular, certificar,
+    registrar, registrarRegreso, guardar, cambiarTipo, verificarPin, firmar, anular, certificar,
     listar, obtenerPorId, agregarInsumo, quitarInsumo, listarParaVinculo,
     faltantes
 };

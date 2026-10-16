@@ -21,6 +21,9 @@
           <button v-if="auth.esAdministrador && ['completa', 'firmada'].includes(s.estado)" class="btn btn-plano" @click="abrirCertificar">
             <Icono nombre="boleta" :tam="15" />Copia certificada
           </button>
+          <button v-if="editable && auth.atiendeServicios && (s.estado === 'en_curso' || !s.tripulacion.length)" class="btn btn-plano" @click="modalTipo = true">
+            <Icono nombre="editar" :tam="15" />Cambiar tipo
+          </button>
           <router-link v-if="editable && auth.atiendeServicios" :to="`/boleta/${s.id}`" class="btn btn-secundario">
             <Icono nombre="editar" :tam="15" />{{ s.estado === 'completa' ? 'Corregir' : 'Completar' }}
           </router-link>
@@ -118,6 +121,7 @@
                   </ul>
                   <p v-else-if="h.detalle?.insumo" class="celda-sec">{{ h.detalle.insumo }} × {{ h.detalle.cantidad }}</p>
                   <p v-else-if="h.detalle?.motivo" class="celda-sec">{{ h.detalle.motivo }}</p>
+                  <p v-else-if="h.accion === 'cambiar_tipo'" class="celda-sec">{{ nombreTipo(h.detalle.de) }} → {{ nombreTipo(h.detalle.a) }}<template v-if="h.detalle.numero_nuevo"> · {{ h.detalle.numero_anterior }} pasó a {{ h.detalle.numero_nuevo }}</template></p>
                 </div>
               </li>
               <li v-if="!s.historial.length">
@@ -129,6 +133,8 @@
         </aside>
       </div>
     </template>
+
+    <CambiarTipo v-if="s" v-model="modalTipo" :boleta="s" @cambiado="cargar" />
 
     <Modal v-model="modalAnular" titulo="Anular boleta" ancho="460px">
       <p class="suave mb">La boleta <strong class="mono">{{ s?.numero_control }}</strong> se conservará marcada como anulada y dejará de contar en estadísticas.
@@ -169,6 +175,7 @@ import { fecha, fechaLarga, fechaHora, hora, minutos, quetzales, hoy } from '../
 import Modal from '../components/Modal.vue';
 import Icono from '../components/Icono.vue';
 import BoletaImpresa from '../components/BoletaImpresa.vue';
+import CambiarTipo from '../components/boleta/CambiarTipo.vue';
 
 const ruta = useRoute();
 const notif = useNotificacionesStore();
@@ -179,7 +186,7 @@ const catalogos = useCatalogosStore();
 
 const ACCIONES = {
   crear: 'Llamada registrada', regreso: 'Regreso de la unidad (número asignado)', editar: 'Editada', completar: 'Completada',
-  firmar: 'Firmada', certificar: 'Copia certificada', anular: 'Anulada', cerrar: 'Servicio cerrado',
+  firmar: 'Firmada', certificar: 'Copia certificada', anular: 'Anulada', cerrar: 'Servicio cerrado', cambiar_tipo: 'Cambio de tipo de servicio',
   agregar_insumo: 'Insumo agregado', quitar_insumo: 'Insumo retirado'
 };
 const CLASE_ESTADO = { en_curso: 'et-info', pendiente: 'et-alerta', completa: 'et-neutra', firmada: 'et-exito', anulada: 'et-peligro' };
@@ -189,6 +196,7 @@ const s = ref(null);
 const cargando = ref(true);
 const procesando = ref(false);
 const modalAnular = ref(false);
+const modalTipo = ref(false);
 const motivoAnular = ref('');
 const modalCertificar = ref(false);
 const cert = reactive({ solicitante: '', destino: '', fecha: hoy() });

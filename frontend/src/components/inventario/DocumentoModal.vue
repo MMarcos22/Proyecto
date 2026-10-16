@@ -36,10 +36,11 @@
         </div>
         <div class="campo">
           <label for="doc-recibe">Recibido por <span class="req">*</span></label>
-          <select id="doc-recibe" v-model="f.recibe_id" class="control">
-            <option :value="null">Elija…</option>
-            <option v-for="p in personalOrdenado" :key="p.id" :value="p.id">{{ p.nombre_completo }}{{ p.escuadra ? ` · ${p.escuadra}` : '' }}</option>
+          <select id="doc-recibe" v-model="f.recibe_id" class="control" :disabled="!f.escuadra_id">
+            <option :value="null">{{ f.escuadra_id ? 'Elija…' : 'Primero elija la escuadra' }}</option>
+            <option v-for="p in personalOrdenado" :key="p.id" :value="p.id">{{ p.nombre_completo }}</option>
           </select>
+          <span v-if="f.escuadra_id && !personalOrdenado.length" class="ayuda">Esa escuadra no tiene personal registrado. Asígnelo en Configuración › Catálogos › Personal.</span>
         </div>
         <div class="campo"><label for="doc-entrega">Entregado por <span class="req">*</span></label><input id="doc-entrega" v-model="f.entrega" class="control" /></div>
       </template>
@@ -158,8 +159,14 @@ const insumosAgrupados = computed(() => catalogos.categorias
   .map(c => ({ categoria: c.valor, nombre: c.nombre, insumos: insumos.value.filter(i => i.categoria === c.valor && (props.tipo !== 'vale' || i.clase !== 'equipo')) }))
   .filter(g => g.insumos.length));
 
-const personalOrdenado = computed(() => [...catalogos.personal].sort((a, b) =>
-  (b.escuadra_id === f.escuadra_id) - (a.escuadra_id === f.escuadra_id) || a.nombre_completo.localeCompare(b.nombre_completo)));
+// Recibe solo alguien de la escuadra del vale
+const personalOrdenado = computed(() => catalogos.personal
+  .filter(p => f.escuadra_id && p.escuadra_id === f.escuadra_id)
+  .sort((a, b) => a.nombre_completo.localeCompare(b.nombre_completo)));
+// Al cambiar de escuadra, quien recibía deja de valer si no es de la nueva
+watch(() => f.escuadra_id, () => {
+  if (f.recibe_id && !personalOrdenado.value.some(p => p.id === f.recibe_id)) f.recibe_id = null;
+});
 
 const mesCerrado = computed(() => cierres.value.some(c => c.anio === Number(f.fecha?.slice(0, 4)) && c.mes === Number(f.fecha?.slice(5, 7))));
 

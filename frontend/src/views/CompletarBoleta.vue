@@ -12,8 +12,11 @@
             <template v-if="estadoGuardado"> · {{ estadoGuardado }}</template>
           </p>
         </div>
+        <button v-if="!pidePin" class="btn btn-plano" @click="abrirCambioTipo"><Icono nombre="editar" :tam="15" />Cambiar tipo de servicio</button>
         <button class="btn btn-secundario" @click="salir">{{ pidePin ? 'Volver' : 'Guardar y salir' }}</button>
       </header>
+      <CambiarTipo v-model="modalTipo" :boleta="{ id, tipo_servicio: d.tipo_servicio, numero_control: s.numero_control }"
+                   :autor="autor ? { personal_id: autor.personal_id, pin: autor.pin } : undefined" @cambiado="tipoCambiado" />
 
       <!-- ══ UNIDAD AÚN FUERA ═══════════════════════════ -->
       <div v-if="estado === 'en_curso'" class="aviso aviso-info mb">
@@ -255,6 +258,7 @@ import BoletaImpresa from '../components/BoletaImpresa.vue';
 import SelectorSector from '../components/boleta/SelectorSector.vue';
 import SelectorTripulacion from '../components/boleta/SelectorTripulacion.vue';
 import SelectorPersona from '../components/boleta/SelectorPersona.vue';
+import CambiarTipo from '../components/boleta/CambiarTipo.vue';
 import DetalleAmbulancia from '../components/boleta/DetalleAmbulancia.vue';
 import DetalleIncendio from '../components/boleta/DetalleIncendio.vue';
 import DetalleRescate from '../components/boleta/DetalleRescate.vue';
@@ -488,6 +492,17 @@ const recargarInsumos = async () => {
 const imprimir = async () => {
   if (cambios.value) await guardar(false);
   await impresion.imprimir(id);
+};
+
+// Al llegar resultó ser otro servicio: se guarda lo escrito y la boleta cambia de tipo
+const modalTipo = ref(false);
+const abrirCambioTipo = async () => {
+  if (cambios.value) await guardar(false);
+  modalTipo.value = true;
+};
+const tipoCambiado = async () => {
+  impresion.contarPendientes();
+  await cargar();
 };
 
 const salir = async () => {

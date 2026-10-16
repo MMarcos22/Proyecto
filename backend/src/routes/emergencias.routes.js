@@ -22,6 +22,8 @@ router.post('/', atiendenServicios, c.registrar);
 // La administración ve las boletas por completar, pero las completa la tripulación
 router.put('/:id', atiendenServicios, c.guardar);
 router.post('/:id/regreso', atiendenServicios, c.registrarRegreso);
+// Al llegar resultó ser otro servicio: la boleta cambia de tipo (y de número, si ya lo tenía)
+router.post('/:id/tipo', atiendenServicios, c.cambiarTipo);
 router.post('/:id/pin', atiendenServicios, c.verificarPin);
 // Cabina solo puede cancelar servicios en curso (sin número); el controlador lo verifica
 router.post('/:id/anular', ambosRoles, c.anular);

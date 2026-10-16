@@ -171,6 +171,8 @@
                 </div>
                 <div v-if="auth.atiendeServicios" class="acciones-fila">
                   <button class="btn btn-plano btn-sm" @click="abrirCancelar(s)">Se canceló</button>
+                  <router-link :to="`/boleta/nueva?incidente=${s.id}`" class="btn btn-secundario btn-sm" title="Pedir otra unidad para este incidente">+ Unidad</router-link>
+                  <router-link :to="`/historial/${s.id}`" class="btn btn-plano btn-sm" title="Ver la boleta o cambiar su tipo de servicio">Ver</router-link>
                   <button class="btn btn-primario btn-sm" @click="abrirRegreso(s)">Regresó</button>
                 </div>
               </li>
