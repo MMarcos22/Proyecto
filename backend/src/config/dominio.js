@@ -95,7 +95,7 @@ const COMUNES = [
 ];
 const UNIDAD = [c('unidad', 'Unidad'), c('piloto', 'Piloto'), c('personal_destacado', 'Personal destacado')];
 const FIRMAS = [
-    c('reporte_formulado_por', 'Reporte formulado por'),
+    c('informe_formulado_por', 'Informe formulado por'),
     c('conforme_piloto', 'Es conforme el piloto'),
     c('vobo_jefe_servicio', 'Vo. Bo. jefe de servicio')
 ];

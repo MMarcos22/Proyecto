@@ -187,7 +187,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
-import { reportes, mensajeError } from '../services/api';
+import { estadisticas, mensajeError } from '../services/api';
 import { useCatalogosStore, TIPOS, ORDEN_SERIE, nombreTipo, corteTipo, colorTipo } from '../stores/catalogos';
 import { useNotificacionesStore } from '../stores/notificaciones';
 import { periodosRapidos, describirPeriodo, numero } from '../utils/formato';
@@ -218,7 +218,7 @@ const fondoCelda = (i, t) => {
 const cargar = async () => {
   cargando.value = true;
   try {
-    const { data } = await reportes.integrado({
+    const { data } = await estadisticas.integrado({
       ...periodo.value, tipo_servicio: tipo.value || undefined, sector_id: sector.value || undefined
     });
     d.value = data;

@@ -29,7 +29,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/emergencias', require('./routes/emergencias.routes'));
 app.use('/api/inventario', require('./routes/inventario.routes'));
-app.use('/api/reportes', require('./routes/reportes.routes'));
+app.use('/api/estadisticas', require('./routes/estadisticas.routes'));
 app.use('/api/catalogos', require('./routes/catalogos.routes'));
 app.use('/api/usuarios', require('./routes/usuarios.routes'));
 app.use('/api/turnos', require('./routes/turnos.routes'));

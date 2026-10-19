@@ -47,8 +47,8 @@
         <template v-if="llevaCertificacion">
           <p class="bol-razon">
             Razón: {{ d.tipo_servicio === 'ambulancia'
-              ? 'La Secretaría Ejecutiva del Cuerpo, para que conste que en esta fecha y a solicitud en esta fecha se extiende copia certificada de este reporte a Sr. (a) (ita):'
-              : 'la pone la Secretaría Ejecutiva del Cuerpo, para que conste que en esta fecha a su solicitud se extiende copia certificada de este reporte.' }}
+              ? 'La Secretaría Ejecutiva del Cuerpo, para que conste que en esta fecha y a solicitud en esta fecha se extiende copia certificada de este informe a Sr. (a) (ita):'
+              : 'la pone la Secretaría Ejecutiva del Cuerpo, para que conste que en esta fecha a su solicitud se extiende copia certificada de este informe.' }}
           </p>
           <div class="bol-razon-fila">
             <span class="bol-et">Sr. (a) (ita)</span>
@@ -85,7 +85,7 @@ import BolAgua from './formularios/BolAgua.vue';
 
 const COMPONENTES = { ambulancia: BolAmbulancia, incendio: BolIncendio, rescate: BolRescate, varios: BolVarios, agua: BolAgua };
 const FIRMAS = [
-  { campo: 'reporte_formulado_por', texto: 'Reporte formulado por:' },
+  { campo: 'informe_formulado_por', texto: 'Informe formulado por:' },
   { campo: 'conforme_piloto', texto: 'Es conforme el piloto:' },
   { campo: 'vobo_jefe_servicio', texto: 'Vo. Bo. Jefe de Servicio:' }
 ];

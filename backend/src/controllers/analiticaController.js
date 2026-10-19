@@ -1,6 +1,6 @@
 // Módulo de análisis de datos institucionales (Objetivo específico 2)
 // Regla de oro: nunca se suman cantidades de insumos distintos (unidades heterogéneas).
-// Entre insumos se cuentan "consumos registrados"; las cantidades se reportan por insumo.
+// Entre insumos se cuentan "consumos registrados"; las cantidades se informan por insumo.
 const { query } = require('../config/database');
 const { leerPeriodo, entero } = require('../utils/comun');
 

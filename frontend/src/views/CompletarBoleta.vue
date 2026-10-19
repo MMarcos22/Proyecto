@@ -182,7 +182,7 @@
               <div class="campo"><span class="rotulo-campo">Jefes de servicio</span><SelectorPersona v-model="d.jefes_servicio" :turno="turnoBoleta" etiqueta="Jefes de servicio" /></div>
             </div>
             <div v-else class="rejilla rejilla-2">
-              <div class="campo"><span class="rotulo-campo">Reporte formulado por</span><SelectorPersona v-model="d.reporte_formulado_por" :turno="turnoBoleta" etiqueta="Reporte formulado por" /></div>
+              <div class="campo"><span class="rotulo-campo">Informe formulado por</span><SelectorPersona v-model="d.informe_formulado_por" :turno="turnoBoleta" etiqueta="Informe formulado por" /></div>
               <div class="campo"><span class="rotulo-campo">Es conforme el piloto</span><SelectorPersona v-model="d.conforme_piloto" :turno="turnoBoleta" etiqueta="Es conforme el piloto" /></div>
               <div class="campo"><span class="rotulo-campo">Vo. Bo. jefe de servicio</span><SelectorPersona v-model="d.vobo_jefe_servicio" :turno="turnoBoleta" etiqueta="Vo. Bo. jefe de servicio" /></div>
             </div>
@@ -368,7 +368,7 @@ const SECCION_DE = {
   sector_id: 'sec-llamada', solicitud_por_telefono: 'sec-llamada', solicitante: 'sec-llamada', direccion: 'sec-llamada',
   subtipo: 'sec-servicio', observaciones: 'sec-servicio', clase_servicio: 'sec-servicio',
   unidad: 'sec-unidad', piloto: 'sec-unidad', personal: 'sec-unidad', personal_destacado: 'sec-unidad', hora_salida: 'sec-unidad', hora_entrada: 'sec-unidad',
-  radiotelefonista: 'sec-firmas', reporte_formulado_por: 'sec-firmas', conforme_piloto: 'sec-firmas', vobo_jefe_servicio: 'sec-firmas', responsable: 'sec-firmas', jefes_servicio: 'sec-firmas'
+  radiotelefonista: 'sec-firmas', informe_formulado_por: 'sec-firmas', conforme_piloto: 'sec-firmas', vobo_jefe_servicio: 'sec-firmas', responsable: 'sec-firmas', jefes_servicio: 'sec-firmas'
 };
 const irA = (clave) => {
   const el = document.getElementById(SECCION_DE[clave] || (d.tipo_servicio === 'ambulancia' && clave === 'caso' ? 'sec-servicio' : 'sec-detalle'));
@@ -443,7 +443,7 @@ const verificarPin = async () => {
   try {
     const { data } = await emergencias.verificarPin(id, { personal_id: pin.personal_id, pin: pin.pin });
     autor.value = { ...data, pin: pin.pin };
-    if (!d.reporte_formulado_por) d.reporte_formulado_por = data.nombre;
+    if (!d.informe_formulado_por) d.informe_formulado_por = data.nombre;
   } catch (e) {
     notif.error(mensajeError(e, 'No se pudo verificar el PIN'));
     pin.pin = '';

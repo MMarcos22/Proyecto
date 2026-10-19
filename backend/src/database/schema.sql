@@ -61,7 +61,7 @@ CREATE TABLE emergencias (
     usuario_id             INTEGER      NOT NULL REFERENCES usuarios(id),
     creado_en              TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- firmas y certificación de la boleta
-    reporte_formulado_por  VARCHAR(150),
+    informe_formulado_por  VARCHAR(150),
     conforme_piloto        VARCHAR(150),
     vobo_jefe_servicio     VARCHAR(150),
     responsable            VARCHAR(150),

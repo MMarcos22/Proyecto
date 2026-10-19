@@ -91,7 +91,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
-import { reportes, mensajeError } from '../services/api';
+import { estadisticas, mensajeError } from '../services/api';
 import { useCatalogosStore, TIPOS, ORDEN_SERIE, nombreTipo, corteTipo, colorTipo } from '../stores/catalogos';
 import { useNotificacionesStore } from '../stores/notificaciones';
 import { periodosRapidos, describirPeriodo, fechaCorta, numero, plural, MESES_CORTOS, MESES } from '../utils/formato';
@@ -156,7 +156,7 @@ const pico = computed(() => {
 const cargar = async () => {
   cargando.value = true;
   try {
-    const { data } = await reportes.tendencias({ ...periodo.value, tipo_servicio: tipo.value || undefined, sector_id: sector.value || undefined });
+    const { data } = await estadisticas.tendencias({ ...periodo.value, tipo_servicio: tipo.value || undefined, sector_id: sector.value || undefined });
     d.value = data;
   } catch (e) {
     notif.error(mensajeError(e, 'No se pudieron calcular las tendencias'));

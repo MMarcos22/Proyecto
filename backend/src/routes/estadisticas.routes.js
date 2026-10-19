@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const r = require('../controllers/reportesController');
+const r = require('../controllers/controlMensualController');
 const a = require('../controllers/analiticaController');
 const s = require('../controllers/serviciosController');
 const { verificarToken } = require('../middleware/auth');

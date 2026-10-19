@@ -126,7 +126,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue';
 import { useCatalogosStore } from '../stores/catalogos';
-import { reportes, inventario, mensajeError } from '../services/api';
+import { estadisticas, inventario, mensajeError } from '../services/api';
 import { useNotificacionesStore } from '../stores/notificaciones';
 import { useAuthStore } from '../stores/auth';
 import { fechaHora, hoy } from '../utils/formato';
@@ -189,7 +189,7 @@ const cargar = async () => {
   cargando.value = true;
   try {
     const [c, i, k] = await Promise.all([
-      reportes.inventarioControlMensual({ mes: periodo.mes, anio: periodo.anio }),
+      estadisticas.inventarioControlMensual({ mes: periodo.mes, anio: periodo.anio }),
       inventario.listar(),
       inventario.cierres().catch(() => ({ data: [] }))
     ]);
@@ -220,7 +220,7 @@ const cerrarMes = async () => {
 const descargarExcel = async () => {
   descargando.value = true;
   try {
-    await reportes.inventarioExcel(periodo.mes, periodo.anio);
+    await estadisticas.inventarioExcel(periodo.mes, periodo.anio);
   } catch (e) {
     notif.error(mensajeError(e, 'No se pudo generar el archivo'));
   } finally {

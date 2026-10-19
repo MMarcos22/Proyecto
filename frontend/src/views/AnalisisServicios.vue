@@ -161,7 +161,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { reportes, mensajeError } from '../services/api';
+import { estadisticas, mensajeError } from '../services/api';
 import { TIPOS, nombreTipo, colorTipo } from '../stores/catalogos';
 import { useNotificacionesStore } from '../stores/notificaciones';
 import { periodosRapidos, describirPeriodo, fechaCorta, plural, variacion } from '../utils/formato';
@@ -225,7 +225,7 @@ const aHistorial = (extra = {}) => ({
 const cargar = async () => {
   cargando.value = true;
   try {
-    const { data } = await reportes.servicios({ ...periodo.value, tipo_servicio: tipo.value || undefined });
+    const { data } = await estadisticas.servicios({ ...periodo.value, tipo_servicio: tipo.value || undefined });
     ind.value = data;
   } catch (e) {
     notif.error(mensajeError(e, 'No se pudo calcular el análisis'));

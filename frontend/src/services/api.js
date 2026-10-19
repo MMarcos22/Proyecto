@@ -96,14 +96,14 @@ export const inventario = {
     cerrarMes: (anio, mes) => api.post('/inventario/cierres', { anio, mes })
 };
 
-export const reportes = {
-    panel: (params) => api.get('/reportes/panel', { params }),
-    servicios: (params) => api.get('/reportes/servicios', { params }),
-    integrado: (params) => api.get('/reportes/integrado', { params }),
-    tendencias: (params) => api.get('/reportes/tendencias', { params }),
-    inventarioControlMensual: (params) => api.get('/reportes/inventario/control', { params }),
-    inventarioExcel: (mes, anio) => descargar('/reportes/inventario/excel', { mes, anio }, `Inventario_${mes}_${anio}.xlsx`),
-    valeSalidasExcel: () => descargar('/reportes/inventario/vale-salidas', null, 'Vale_de_salidas.xlsx')
+export const estadisticas = {
+    panel: (params) => api.get('/estadisticas/panel', { params }),
+    servicios: (params) => api.get('/estadisticas/servicios', { params }),
+    integrado: (params) => api.get('/estadisticas/integrado', { params }),
+    tendencias: (params) => api.get('/estadisticas/tendencias', { params }),
+    inventarioControlMensual: (params) => api.get('/estadisticas/inventario/control', { params }),
+    inventarioExcel: (mes, anio) => descargar('/estadisticas/inventario/excel', { mes, anio }, `Inventario_${mes}_${anio}.xlsx`),
+    valeSalidasExcel: () => descargar('/estadisticas/inventario/vale-salidas', null, 'Vale_de_salidas.xlsx')
 };
 
 export const informes = {

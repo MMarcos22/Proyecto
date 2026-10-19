@@ -45,7 +45,7 @@ const CAMPOS_DETALLE = {
 const CAMPOS_BASE = ['tipo_servicio', 'fecha', 'minutos_trabajados',
     'solicitud_por_telefono', 'personal', 'salida_de', 'hora_aviso', 'hora_salida', 'entrada_a', 'hora_entrada',
     'direccion', 'zona', 'solicitante', 'radiotelefonista', 'piloto', 'unidad', 'personal_destacado',
-    'observaciones', 'reporte_formulado_por', 'conforme_piloto', 'vobo_jefe_servicio',
+    'observaciones', 'informe_formulado_por', 'conforme_piloto', 'vobo_jefe_servicio',
     'responsable', 'jefes_servicio', 'copia_certificada_a', 'fecha_certificacion',
     'sector_id', 'lugar_critico_id', 'unidad_id', 'piloto_id', 'subtipo'];
 

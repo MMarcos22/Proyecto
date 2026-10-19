@@ -117,7 +117,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
-import { reportes, mensajeError } from '../services/api';
+import { estadisticas, mensajeError } from '../services/api';
 import { useAuthStore } from '../stores/auth';
 import { useCatalogosStore, corteTipo, colorTipo, nombreTipo } from '../stores/catalogos';
 import { useNotificacionesStore } from '../stores/notificaciones';
@@ -161,7 +161,7 @@ const barrasSector = computed(() => d.value.por_sector.map(s => ({
 const cargar = async () => {
   cargando.value = true;
   try {
-    const { data } = await reportes.panel(periodo.value);
+    const { data } = await estadisticas.panel(periodo.value);
     d.value = data;
   } catch (e) {
     notif.error(mensajeError(e, 'No se pudo cargar el panel'));

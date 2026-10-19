@@ -165,7 +165,7 @@ const OBSERVACIONES = {
     accidente_moto: ['Colisión entre motocicleta y pickup', 'Motorista derrapó en curva', 'Motocicleta impactó contra poste'],
     accidente_vehiculo: ['Volcadura de vehículo liviano', 'Choque entre camión y automóvil', 'Colisión de bus extraurbano'],
     atropello: ['Atropello de peatón en la vía', 'Peatón atropellado por motocicleta'],
-    falsa_alarma: ['Se reportó accidente; al llegar no había servicio', 'Llamada sin emergencia en el lugar'],
+    falsa_alarma: ['Avisaron de un accidente; al llegar no había servicio', 'Llamada sin emergencia en el lugar'],
     sin_traslado: ['Paciente valorado en el lugar; no requirió traslado', 'Atención prehospitalaria sin traslado'],
     accidente_trabajo: ['Trabajador cayó de andamio', 'Herida cortante con machete en labores agrícolas', 'Golpe con material de construcción'],
     maternidad: ['Paciente en labor de parto activo', 'Embarazo de 38 semanas con contracciones', 'Ruptura de membranas'],
@@ -581,7 +581,7 @@ const main = async () => {
                 INSERT INTO emergencias (numero_control, tipo_servicio, subtipo, fecha, minutos_trabajados, solicitud_por_telefono,
                     personal, salida_de, hora_salida, entrada_a, hora_entrada, direccion, zona, sector_id, solicitante,
                     radiotelefonista, piloto, piloto_id, unidad, unidad_id, observaciones,
-                    reporte_formulado_por, conforme_piloto, vobo_jefe_servicio, responsable, jefes_servicio,
+                    informe_formulado_por, conforme_piloto, vobo_jefe_servicio, responsable, jefes_servicio,
                     usuario_id, estado, turno_id, creado_en, impresa_en, impresiones,
                     regreso_en, completada_en, firmada_en, firmada_por, lugar_critico_id, hora_aviso)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,

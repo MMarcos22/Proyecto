@@ -4,11 +4,11 @@ import { ref, computed } from 'vue';
 import { catalogos } from '../services/api';
 
 export const TIPOS = [
-    { valor: 'ambulancia', nombre: 'Ambulancia', corto: 'Ambulancia', titulo: 'REPORTE DE AMBULANCIA' },
-    { valor: 'incendio', nombre: 'Incendio', corto: 'Incendio', titulo: 'REPORTE DE INCENDIO' },
+    { valor: 'ambulancia', nombre: 'Ambulancia', corto: 'Ambulancia', titulo: 'INFORME DE AMBULANCIA' },
+    { valor: 'incendio', nombre: 'Incendio', corto: 'Incendio', titulo: 'INFORME DE INCENDIO' },
     { valor: 'rescate', nombre: 'Rescate', corto: 'Rescate', titulo: 'SERVICIO DE RESCATE' },
-    { valor: 'varios', nombre: 'Servicios varios', corto: 'Varios', titulo: 'REPORTE DE SERVICIOS VARIOS' },
-    { valor: 'agua', nombre: 'Servicio de agua', corto: 'Agua', titulo: 'REPORTE DE SERVICIOS DE AGUA' }
+    { valor: 'varios', nombre: 'Servicios varios', corto: 'Varios', titulo: 'INFORME DE SERVICIOS VARIOS' },
+    { valor: 'agua', nombre: 'Servicio de agua', corto: 'Agua', titulo: 'INFORME DE SERVICIOS DE AGUA' }
 ];
 
 // Orden de apilado validado para daltonismo: rojo y ámbar nunca quedan adyacentes

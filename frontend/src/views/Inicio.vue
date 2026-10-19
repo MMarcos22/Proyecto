@@ -328,7 +328,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
-import { turnos, emergencias, inventario, catalogos as apiCatalogos, reportes, mensajeError } from '../services/api';
+import { turnos, emergencias, inventario, catalogos as apiCatalogos, estadisticas, mensajeError } from '../services/api';
 import { useAuthStore } from '../stores/auth';
 import { useAlertasStore } from '../stores/alertas';
 import { useImpresionStore } from '../stores/impresion';
@@ -439,7 +439,7 @@ const textoFaltantes = (lista) => {
 const cargar = async () => {
   try {
     if (auth.esDireccion) {
-      const { data } = await reportes.panel();
+      const { data } = await estadisticas.panel();
       resumen.value = data;
     } else {
       const [t, e, p] = await Promise.all([
@@ -450,7 +450,7 @@ const cargar = async () => {
       enCurso.value = e.data;
       porCompletar.value = p.data;
       if (auth.esAdministrador) {
-        const [r, inv] = await Promise.all([reportes.panel(), inventario.listar(), alertas.cargar()]);
+        const [r, inv] = await Promise.all([estadisticas.panel(), inventario.listar(), alertas.cargar()]);
         resumen.value = r.data;
         insumos.value = inv.data.insumos;
       }
