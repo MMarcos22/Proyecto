@@ -612,7 +612,7 @@ El botón de cada unidad fuera es **"La unidad regresó"** (asigna el número), 
  ┌──────────────────────────────────────┬──────────────────────────────────────┐
  │ Nº 1763 · Ambulancia · Pendiente     │  ┌────────────────────────────────┐  │
  │                                      │  │  BENEMÉRITO CUERPO VOLUNTARIO  │  │
- │ Pacientes                            │  │  INFORME DE AMBULANCIA          │  │
+ │ Pacientes                            │  │  INFORME DE AMBULANCIA         │  │
  │  Nombre [............]  Edad [..]    │  │  Control: 1763                 │  │
  │ Causa  (o) Accidente de motocicleta  │  │  Dirección: 9a. av. 11-14 ...  │  │
  │ Traslado a  (o) Hosp. Modular ...    │  │  Paciente: ▓▓▓▓▓▓▓▓            │  │
