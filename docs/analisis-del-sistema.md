@@ -51,7 +51,7 @@
 | Actor | Qué hace hoy | Qué necesita del sistema |
 |---|---|---|
 | **Encargada administrativa** (la hija) | **No es bombero** [Audio 07:10]. Trabaja de **7:00 a 17:00** [Audio 07:22]. Lleva documentos, entradas y salidas de bodega, acomodo, combustible y, temporalmente, la caja. Revisa cada día las boletas | Registrar entradas y vales una sola vez; que la hoja mensual, el resumen anual y los informes salgan solos; revisar la numeración sin buscar en papeles |
-| **Hermano** | Apoya con la impresión de reportes [Audio 53:15] | Lo mismo que la encargada (respaldo) |
+| **Hermano** | Apoya con la impresión de informes [Audio 53:15] | Lo mismo que la encargada (respaldo) |
 | **Jefe / oficial** (el papá) | Dirige la compañía; quiere terminar lo que el programador anterior dejó a medias [Audio 11:38–11:46] | Ver todo sin riesgo de modificar; informes para decidir y para presentar |
 | **Cabinista** (radiotelefonista) | Recibe la llamada, indica a la tripulación a dónde ir; en el programa anterior **generaba la orden** [Audio 17:11–17:23, 57:00] | Iniciar la boleta al recibir la llamada; registrar el regreso de la unidad |
 | **Tripulación** (2 por unidad) | Atiende el servicio, limpia la unidad y llena la boleta, a veces horas después (regresan a las 2:30 y llenan a las 5:00) [Audio 58:31–58:49] | Completar *su* boleta cuando pueda, sin perder el número |
@@ -612,7 +612,7 @@ El botón de cada unidad fuera es **"La unidad regresó"** (asigna el número), 
  ┌──────────────────────────────────────┬──────────────────────────────────────┐
  │ Nº 1763 · Ambulancia · Pendiente     │  ┌────────────────────────────────┐  │
  │                                      │  │  BENEMÉRITO CUERPO VOLUNTARIO  │  │
- │ Pacientes                            │  │  REPORTE DE AMBULANCIA         │  │
+ │ Pacientes                            │  │  INFORME DE AMBULANCIA          │  │
  │  Nombre [............]  Edad [..]    │  │  Control: 1763                 │  │
  │ Causa  (o) Accidente de motocicleta  │  │  Dirección: 9a. av. 11-14 ...  │  │
  │ Traslado a  (o) Hosp. Modular ...    │  │  Paciente: ▓▓▓▓▓▓▓▓            │  │
